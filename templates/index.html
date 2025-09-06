@@ -1,159 +1,250 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <title>SSH 管理面板</title>
-  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-  <style>
-    body { font-family: Arial; margin: 20px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 8px; }
-    th { background: #f2f2f2; }
-    #logs { background: black; color: lime; height: 200px; overflow-y: scroll; padding: 10px; }
-    .btn { padding: 6px 12px; margin: 2px; cursor: pointer; border: 1px solid #444; border-radius: 5px; }
-    .btn:hover { background: #ddd; }
-  </style>
+<meta charset="UTF-8">
+<title>SSH 管理面板</title>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<style>
+  body { font-family: Arial; margin: 10px; }
+  h2,h3{ margin-bottom: 8px; }
+
+  /* 响应式布局 */
+  .flex-container{ display:flex; flex-wrap:wrap; gap:10px; }
+  .flex-item{ flex:1 1 300px; min-width:280px; }
+  input,textarea{ padding:6px; margin:2px; width:100%; box-sizing:border-box; }
+  .btn{ padding:6px 12px; margin:2px; cursor:pointer; border:1px solid #444; border-radius:5px; }
+  .btn:hover{ background:#ddd; }
+
+  /* 表格 */
+  table{ border-collapse:collapse; width:100%; margin-top:10px; table-layout:auto; }
+  th,td{ border:1px solid #ddd; padding:6px; text-align:center; }
+  th{ background:#f2f2f2; position:sticky; top:0; z-index:1; }
+  th.resizable{ position:relative; }
+  th.resizable:hover::after{ content:''; position:absolute; right:0; top:0; width:5px; height:100%; cursor:col-resize; }
+
+  /* 状态高亮 */
+  .high-cpu{ background:#ffcccc; }
+  .high-memory{ background:#ffcccc; }
+  .high-latency{ background:#fff3cc; }
+
+  /* 在线状态 */
+  .status-online{ color:lime; font-weight:bold; }
+  .status-offline{ color:red; font-weight:bold; }
+
+  /* 日志 */
+  #logsContainer{ display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+  .host-log{ background:black; color:white; width:48%; max-height:300px; overflow-y:scroll; padding:8px; font-size:12px; font-family:monospace; border:1px solid #444; border-radius:5px; }
+  .host-log-header{ display:flex; justify-content:space-between; cursor:pointer; font-weight:bold; margin-bottom:5px; }
+  .log-info{ color:white; }
+  .log-debug{ color:#00f; }
+  .log-error{ color:red; }
+  .collapsed .host-log-body{ display:none; }
+
+  /* 命令历史下拉 */
+  #historyDropdown{ position:absolute; background:#fff; border:1px solid #ccc; z-index:10; max-height:150px; overflow-y:auto; display:none; }
+  #historyDropdown div{ padding:4px 8px; cursor:pointer; }
+  #historyDropdown div:hover{ background:#eee; }
+</style>
 </head>
 <body>
-  <h2>SSH 管理面板</h2>
+<h2>SSH 管理面板</h2>
 
-  <!-- 批量命令执行 -->
-  <div>
-    <input type="text" id="command" placeholder="输入命令">
-    <button class="btn" onclick="execCommand()">执行命令</button>
-  </div>
+<!-- 批量命令执行 -->
+<div class="flex-container flex-item" style="position: relative;">
+  <input type="text" id="command" placeholder="输入命令">
+  <div id="historyDropdown"></div>
+  <button class="btn" onclick="execCommand()">执行命令</button>
+</div>
 
-  <!-- 手动添加主机 -->
-  <h3>手动添加主机</h3>
+<!-- 手动添加主机 -->
+<h3>手动添加主机</h3>
+<div class="flex-container">
   <input type="text" id="manual_ip" placeholder="IP">
   <input type="text" id="manual_name" placeholder="备注">
+  <input type="text" id="manual_user" placeholder="用户名">
+  <input type="password" id="manual_pass" placeholder="密码">
   <button class="btn" onclick="addManualHost()">添加</button>
+</div>
 
-  <!-- AWS 导入 -->
-  <h3>AWS 批量导入</h3>
-  <textarea id="aws_accounts" rows="3" cols="50" placeholder="格式: 任意----AccessKey----SecretKey (一行一个)"></textarea><br>
-  <button class="btn" onclick="importAwsHosts()">导入</button>
+<!-- AWS 批量导入 -->
+<h3>AWS 批量导入</h3>
+<textarea id="aws_accounts" rows="3" placeholder="格式: 任意----AccessKey----SecretKey (一行一个)"></textarea><br>
+<button class="btn" onclick="importAwsHosts()">导入</button>
 
-  <!-- 主机表格 -->
-  <h3>主机列表</h3>
-  <table id="hostTable">
-    <thead>
-      <tr>
-        <th><input type="checkbox" id="checkAll" onclick="toggleAll(this)"></th>
-        <th>IP</th>
-        <th>备注</th>
-        <th>CPU%</th>
-        <th>内存%</th>
-        <th>网络</th>
-        <th>延迟</th>
-        <th>进程Top5</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody id="hostBody"></tbody>
-  </table>
+<!-- 主机表格 -->
+<h3>主机列表</h3>
+<table id="hostTable">
+  <thead>
+    <tr>
+      <th><input type="checkbox" id="checkAll" onclick="toggleAll(this)"></th>
+      <th>IP</th>
+      <th>备注</th>
+      <th>在线</th>
+      <th>CPU%</th>
+      <th>内存%</th>
+      <th>网络</th>
+      <th>延迟</th>
+      <th>进程Top5</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody id="hostBody"></tbody>
+</table>
 
-  <!-- 日志 -->
-  <h3>日志</h3>
-  <div id="logs"></div>
+<!-- 日志 -->
+<h3>日志</h3>
+<div id="logsContainer"></div>
 
-  <script>
-    let selectedIps = [];
+<script>
+let commandHistory = JSON.parse(localStorage.getItem("commandHistory") || "[]");
 
-    // 执行命令
-    function execCommand() {
-      let command = document.getElementById("command").value;
-      let ips = Array.from(document.querySelectorAll(".chk:checked")).map(c => c.value);
-      console.log("[DEBUG][前端] execCommand 发送", {ips, command});
-      axios.post("/exec_command", {ips, command})
-        .then(res => console.log("[DEBUG][前端] 执行命令返回:", res.data))
-        .catch(err => console.error("[ERROR][前端] 执行命令失败:", err));
-    }
+// 命令历史下拉
+const commandInput = document.getElementById("command");
+const historyDropdown = document.getElementById("historyDropdown");
+commandInput.addEventListener("focus", showHistory);
+commandInput.addEventListener("input", showHistory);
+document.addEventListener("click", e => { if(!historyDropdown.contains(e.target) && e.target!==commandInput) historyDropdown.style.display="none"; });
+function showHistory(){
+  const filter = commandInput.value.toLowerCase();
+  historyDropdown.innerHTML="";
+  let filtered = commandHistory.filter(cmd=>cmd.toLowerCase().includes(filter));
+  if(filtered.length===0) return historyDropdown.style.display="none";
+  filtered.forEach(cmd=>{
+    let div=document.createElement("div");
+    div.innerText=cmd;
+    div.onclick=()=>{ commandInput.value=cmd; historyDropdown.style.display="none"; };
+    historyDropdown.appendChild(div);
+  });
+  historyDropdown.style.display="block";
+}
+function addToHistory(cmd){
+  if(!cmd || commandHistory.includes(cmd)) return;
+  commandHistory.unshift(cmd);
+  if(commandHistory.length>50) commandHistory.pop();
+  localStorage.setItem("commandHistory", JSON.stringify(commandHistory));
+}
 
-    // 手动添加主机
-    function addManualHost() {
-      let ip = document.getElementById("manual_ip").value;
-      let name = document.getElementById("manual_name").value;
-      console.log("[DEBUG][前端] addManualHost 发送", {ip, name});
-      axios.post("/add_manual_host", {ip, name})
-        .then(res => {
-          console.log("[DEBUG][前端] 手动添加返回:", res.data);
-          loadHosts();
-        })
-        .catch(err => console.error("[ERROR][前端] 手动添加失败:", err));
-    }
+// 执行命令
+function execCommand(){
+  let command=commandInput.value.trim();
+  if(!command) return;
+  addToHistory(command);
+  let ips = Array.from(document.querySelectorAll(".chk:checked")).map(c=>c.value);
+  axios.post("/exec_command",{ips,command});
+}
 
-    // AWS 导入
-    function importAwsHosts() {
-      let lines = document.getElementById("aws_accounts").value.trim().split("\n");
-      let accounts = lines.map(line => {
-        let parts = line.split("----");
-        return {label: parts[0], access_key: parts[1], secret_key: parts[2]};
-      });
-      console.log("[DEBUG][前端] importAwsHosts 发送", {accounts});
-      axios.post("/import_aws_hosts", {accounts})
-        .then(res => {
-          console.log("[DEBUG][前端] AWS 导入返回:", res.data);
-          loadHosts();
-        })
-        .catch(err => console.error("[ERROR][前端] AWS 导入失败:", err));
-    }
+// 手动添加主机
+function addManualHost(){
+  let ip=document.getElementById("manual_ip").value;
+  let name=document.getElementById("manual_name").value;
+  let user=document.getElementById("manual_user").value;
+  let pass=document.getElementById("manual_pass").value;
+  axios.post("/add_manual_host",{ip,name,user,pass}).then(()=>console.log("添加成功"));
+}
 
-    // 恢复主机
-    function recoverHost(ip) {
-      console.log("[DEBUG][前端] recoverHost 发送", {ip});
-      axios.post("/recover_host", {ip})
-        .then(res => {
-          console.log("[DEBUG][前端] 恢复返回:", res.data);
-          loadHosts();
-        })
-        .catch(err => console.error("[ERROR][前端] 恢复失败:", err));
-    }
+// AWS 导入
+function importAwsHosts(){
+  let lines=document.getElementById("aws_accounts").value.trim().split("\n");
+  let accounts=lines.map(line=>{
+    let parts=line.split("----");
+    return {label:parts[0],access_key:parts[1],secret_key:parts[2]};
+  });
+  axios.post("/import_aws_hosts",{accounts}).then(()=>console.log("导入成功"));
+}
 
-    // 载入主机表格
-    function loadHosts() {
-      axios.get("/monitor_data").then(res => {
-        let data = res.data;
-        let body = document.getElementById("hostBody");
-        body.innerHTML = "";
-        for (let ip in data) {
-          let row = `<tr>
-            <td><input type="checkbox" class="chk" value="${ip}"></td>
-            <td>${ip}</td>
-            <td>-</td>
-            <td>${data[ip].cpu}</td>
-            <td>${data[ip].memory}</td>
-            <td>${data[ip].network}</td>
-            <td>${data[ip].ping}</td>
-            <td><pre>${data[ip].top5_processes}</pre></td>
-            <td><button class="btn" onclick="recoverHost('${ip}')">恢复</button></td>
-          </tr>`;
-          body.innerHTML += row;
-        }
-      });
-    }
+// 恢复/修改密码
+function recoverHost(ip){ axios.post("/recover_host",{ip}); }
+function changePassword(ip){ let newPass=prompt("请输入新密码"); if(newPass) axios.post("/change_password",{ip,password:newPass}); }
 
-    // 日志刷新
-    function loadLogs() {
-      axios.get("/logs").then(res => {
-        let logs = res.data.logs.join("");
-        let logDiv = document.getElementById("logs");
-        logDiv.innerText = logs;
-        logDiv.scrollTop = logDiv.scrollHeight;
-      });
-    }
+// 日志处理
+function appendHostLogs(ip, logArray){
+  let container=document.getElementById("logsContainer");
+  let hostDiv=document.getElementById(`host-log-${ip}`);
+  if(!hostDiv){
+    hostDiv=document.createElement("div"); hostDiv.id=`host-log-${ip}`; hostDiv.className="host-log";
+    let header=document.createElement("div"); header.className="host-log-header";
+    let title=document.createElement("span"); title.innerText=`主机 ${ip}`;
+    let toggle=document.createElement("span"); toggle.innerText="折叠"; toggle.style.color="yellow";
+    header.appendChild(title); header.appendChild(toggle); hostDiv.appendChild(header);
+    let body=document.createElement("div"); body.className="host-log-body"; hostDiv.appendChild(body);
+    toggle.addEventListener("click",()=>{ hostDiv.classList.toggle("collapsed"); toggle.innerText=hostDiv.classList.contains("collapsed")?"展开":"折叠"; });
+    container.appendChild(hostDiv);
+  }
+  let body=hostDiv.querySelector(".host-log-body");
+  logArray.forEach(line=>{
+    let span=document.createElement("span");
+    span.className=line.includes("[DEBUG]")?"log-debug":line.includes("[ERROR]")?"log-error":"log-info";
+    span.innerText=line+"\n";
+    body.appendChild(span);
+  });
+  if(!hostDiv.classList.contains("collapsed")) body.scrollTop=body.scrollHeight;
+}
 
-    // 全选/全不选
-    function toggleAll(source) {
-      document.querySelectorAll(".chk").forEach(c => c.checked = source.checked);
-    }
+function appendLogs(logArray){
+  let container=document.getElementById("logsContainer");
+  let globalDiv=document.getElementById("global-log");
+  if(!globalDiv){
+    globalDiv=document.createElement("div"); globalDiv.id="global-log"; globalDiv.className="host-log";
+    let header=document.createElement("div"); header.className="host-log-header";
+    let title=document.createElement("span"); title.innerText="系统日志";
+    header.appendChild(title); globalDiv.appendChild(header);
+    let body=document.createElement("div"); body.className="host-log-body"; globalDiv.appendChild(body);
+    container.appendChild(globalDiv);
+  }
+  let body=globalDiv.querySelector(".host-log-body");
+  logArray.forEach(line=>{
+    let span=document.createElement("span");
+    span.className=line.includes("[DEBUG]")?"log-debug":line.includes("[ERROR]")?"log-error":"log-info";
+    span.innerText=line+"\n";
+    body.appendChild(span);
+  });
+  body.scrollTop=body.scrollHeight;
+}
 
-    // 定时刷新
-    setInterval(loadHosts, 5000);
-    setInterval(loadLogs, 3000);
+// WebSocket 实时刷新
+const ws=new WebSocket("ws://你的服务器地址/ws_monitor");
+ws.onopen=()=>console.log("[WS] 连接已建立");
+ws.onclose=()=>console.log("[WS] 连接关闭");
+ws.onerror=err=>console.error("[WS] 连接错误",err);
+ws.onmessage=event=>{
+  try{
+    let msg=JSON.parse(event.data);
+    if(msg.type==="monitor_data") updateHosts(msg.data);
+    else if(msg.type==="logs") appendLogs(msg.logs||[]);
+    else if(msg.type==="host_logs") for(let ip in msg.data) appendHostLogs(ip,msg.data[ip]);
+  }catch(e){ console.error("[WS] 数据解析错误",e); }
+};
 
-    loadHosts();
-    loadLogs();
-  </script>
+// 更新表格
+function updateHosts(data){
+  let body=document.getElementById("hostBody"); body.innerHTML="";
+  for(let ip in data){
+    let host=data[ip];
+    let cpuClass=host.cpu>80?"high-cpu":"";
+    let memClass=host.memory>80?"high-memory":"";
+    let latencyClass=host.ping>200?"high-latency":"";
+    let onlineClass=host.online?"status-online":"status-offline";
+    let onlineText=host.online?"在线":"离线";
+    let row=`<tr>
+      <td><input type="checkbox" class="chk" value="${ip}"></td>
+      <td>${ip}</td>
+      <td>${host.name||'-'}</td>
+      <td class="${onlineClass}">${onlineText}</td>
+      <td class="${cpuClass}">${host.cpu}</td>
+      <td class="${memClass}">${host.memory}</td>
+      <td>${host.network}</td>
+      <td class="${latencyClass}">${host.ping}</td>
+      <td><pre>${host.top5_processes}</pre></td>
+      <td>
+        <button class="btn" onclick="recoverHost('${ip}')">恢复</button>
+        <button class="btn" onclick="changePassword('${ip}')">修改密码</button>
+      </td>
+    </tr>`;
+    body.innerHTML+=row;
+  }
+}
+
+function toggleAll(source){ document.querySelectorAll(".chk").forEach(c=>c.checked=source.checked); }
+</script>
 </body>
 </html>
