@@ -27,7 +27,7 @@ fi
 echo "[INFO] 安装 pip3 和 Python 库..."
 python3.13 -m ensurepip --upgrade
 python3.13 -m pip install --upgrade pip
-python3.13 -m pip install flask paramiko boto3
+python3.13 -m pip install flask flask-socketio eventlet paramiko boto3
 
 # ------------------ 创建目录 ------------------
 echo "[INFO] 创建项目目录..."
