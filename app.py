@@ -240,4 +240,4 @@ threading.Thread(target=update_monitor, daemon=True).start()
 
 # -------------------- 启动 Flask --------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=12138, debug=True)
