@@ -1,1 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SSH Web 面板</title>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<style>
+body { font-family: Arial, sans-serif; margin: 20px; background-color: #f7f7f7; }
+h1, h2, h3 { color: #333; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 10px; background-color: #fff; }
+th, td { border: 1px solid #ccc; padding: 8px; text-align: left; cursor: default; }
+th.sortable { cursor: pointer; }
+th { background-color: #eaeaea; }
+.btn { padding: 6px 12px; margin: 2px; cursor: pointer; border: 1px solid #888; border-radius: 4px; background-color: #eee; }
+.btn:hover { background-color: #ddd; }
+#logs { height: 200px; overflow-y: scroll; border: 1px solid #ccc; padding: 8px; background-color: #f9f9f9; white-space: pre-wrap; }
+pre { margin: 0; }
+.pagination { margin: 5px 0; }
+.page-btn { padding: 3px 8px; margin: 0 2px; cursor: pointer; border: 1px solid #888; border-radius: 3px; background-color: #eee; }
+.page-btn.active { background-color: #bbb; }
+input[type=text] { padding:4px; margin:2px; }
+</style>
+</head>
+<body>
 
+<h1>SSH Web 面板</h1>
+
+<!-- 主机管理 -->
+<h2>主机管理</h2>
+<div>
+搜索：
+<input type="text" id="hostSearch" placeholder="输入IP或主机名" onkeyup="filterHostTable()">
+<button class="btn" onclick="selectAll()">全选</button>
+<button class="btn" onclick="deselectAll()">全不选</button>
+<button class="btn" onclick="refreshHosts()">刷新列表</button>
+<button class="btn" onclick="awsImport()">AWS批量导入</button>
+<button class="btn" onclick="recoverHost()">恢复主机</button>
+&nbsp;&nbsp;每页显示：
+<select id="pageSizeSelect" onchange="changePageSize()">
+    <option value="10">10</option>
+    <option value="20">20</option>
+    <option value="50">50</option>
+    <option value="100">100</option>
+</select>
+</div>
+
+<!-- 手动添加主机 -->
+<h3>手动添加主机</h3>
+<div>
+<input type="text" id="manualHostIP" placeholder="主机IP">
+<input type="text" id="manualHostName" placeholder="主机名">
+<input type="text" id="manualUsername" placeholder="用户名" value="root">
+<input type="text" id="manualPassword" placeholder="密码" value="Qcy1994@06">
+<button class="btn" onclick="addManualHost()">添加</button>
+</div>
+
+<table id="host_table">
+<thead>
+<tr>
+<th>选择</th>
+<th>主机名</th>
+<th>IP</th>
+<th>用户名</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+{% for host in hosts %}
+<tr>
+<td><input type="checkbox" class="host_checkbox" value="{{ host.ip }}"></td>
+<td>{{ host.name }}</td>
+<td>{{ host.ip }}</td>
+<td>{{ host.username }}</td>
+<td>手动操作可扩展</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+<div class="pagination" id="host_pagination"></div>
+
+<!-- 命令执行 -->
+<h2>命令执行</h2>
+<input type="text" id="command_input" placeholder="输入命令" style="width:70%;">
+<button class="btn" onclick="execCommand()">执行</button>
+
+<!-- 监控表格 -->
+<h2>实时监控</h2>
+<div>
+搜索：
+<input type="text" id="monitorSearch" placeholder="输入IP" onkeyup="filterMonitorTable()">
+每页显示：
+<select id="monitorPageSizeSelect" onchange="changeMonitorPageSize()">
+    <option value="10">10</option>
+    <option value="20">20</option>
+    <option value="50">50</option>
+    <option value="100">100</option>
+</select>
+</div>
+<div style="overflow-x:auto;">
+<table id="monitor_table">
+<thead>
+<tr>
+<th class="sortable" onclick="sortMonitorTable('ip')">IP</th>
+<th class="sortable" onclick="sortMonitorTable('cpu')">CPU (%)</th>
+<th class="sortable" onclick="sortMonitorTable('memory')">内存 (%)</th>
+<th class="sortable" onclick="sortMonitorTable('network')">网络 (Rx/Tx)</th>
+<th class="sortable" onclick="sortMonitorTable('top5')">Top5 进程</th>
+<th class="sortable" onclick="sortMonitorTable('ping')">延迟(ms)</th>
+</tr>
+</thead>
+<tbody>
+</tbody>
+</table>
+<div class="pagination" id="monitor_pagination"></div>
+</div>
+
+<!-- 日志 -->
+<h2>日志输出</h2>
+<div id="logs"></div>
+
+<script>
+// -------------------- 主机表格分页 + 搜索 --------------------
+let pageSize=10,currentPage=1;
+function paginateTable(){
+    let rows=$("#host_table tbody tr:visible");
+    let totalPages=Math.ceil(rows.length/pageSize);
+    if(currentPage>totalPages) currentPage=totalPages;
+    if(currentPage<1) currentPage=1;
+    rows.hide();
+    let start=(currentPage-1)*pageSize;
+    rows.slice(start,start+pageSize).show();
+    let html="";
+    for(let i=1;i<=totalPages;i++){ html+=`<span class="page-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</span>`;}
+    $("#host_pagination").html(html);
+}
+function goPage(p){ currentPage=p; paginateTable(); }
+function changePageSize(){ pageSize=parseInt($("#pageSizeSelect").val()); currentPage=1; paginateTable(); }
+function filterHostTable(){ paginateTable(); }
+
+// -------------------- 主机操作 --------------------
+function selectAll(){ $(".host_checkbox:visible").prop("checked", true); }
+function deselectAll(){ $(".host_checkbox:visible").prop("checked", false); }
+function refreshHosts(){ location.reload(); }
+function execCommand(){
+    let ips=[];
+    $(".host_checkbox:checked").each(function(){ ips.push($(this).val()); });
+    let cmd=$("#command_input").val();
+    if(ips.length==0){ alert("请至少选择一台主机"); return; }
+    $.ajax({url:"/exec_command",type:"POST",contentType:"application/json",data:JSON.stringify({ips:ips,command:cmd}),
+        success:function(){ alert("命令执行完成，查看日志输出"); }
+    });
+}
+
+// -------------------- 手动添加主机 --------------------
+function addManualHost(){
+    let ip = $("#manualHostIP").val().trim();
+    let name = $("#manualHostName").val().trim();
+    let username = $("#manualUsername").val().trim() || "root";
+    let password = $("#manualPassword").val().trim() || "Qcy1994@06";
+    if(!ip){ alert("IP不能为空"); return; }
+    $.ajax({
+        url: "/add_manual_host",
+        type: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({ip: ip, name: name, username: username, password: password}),
+        success: function(res){
+            alert(`主机添加成功：${res.ip}`);
+            refreshHosts();
+        }
+    });
+}
+
+// -------------------- AWS 批量导入 --------------------
+function awsImport(){
+    let accounts = prompt("请输入账号列表，每行格式：任意----Access Key----Secret Key");
+    if(!accounts){ alert("账号不能为空"); return; }
+
+    let lines = accounts.split("\n").map(l=>l.trim()).filter(l=>l);
+    let importData = [];
+    for(let line of lines){
+        let parts = line.split("----");
+        if(parts.length<3){ alert("格式错误: "+line); return; }
+        importData.push({label: parts[0], access_key: parts[1], secret_key: parts[2], username:"root", password:"Qcy1994@06"});
+    }
+
+    $.ajax({
+        url:"/import_aws_hosts",
+        type:"POST",
+        contentType:"application/json",
+        data: JSON.stringify({accounts: importData}),
+        success:function(res){
+            alert(`AWS导入完成，共导入 ${res.count} 台主机`);
+            refreshHosts();
+        }
+    });
+}
+
+// -------------------- 恢复主机 --------------------
+function recoverHost(){
+    let ip=prompt("请输入无法连接的主机IP进行恢复:");
+    if(!ip){ alert("IP不能为空"); return; }
+    $.ajax({url:"/recover_host",type:"POST",contentType:"application/json",
+        data:JSON.stringify({ip:ip}),
+        success:function(res){ alert(`恢复完成：删除旧主机并重新拉取 ${res.imported_count} 台主机`); refreshHosts(); }
+    });
+}
+
+// -------------------- 监控表格分页 + 排序 + 搜索 --------------------
+let monitorData=[], monitorPageSize=10, monitorCurrentPage=1, monitorSortKey=null, monitorSortAsc=true;
+function updateMonitorData(res){
+    monitorData=[];
+    for(let ip in res){
+        monitorData.push({ip:ip,cpu:res[ip].cpu||0,memory:res[ip].memory||0,network:res[ip].network||'-',top5:res[ip].top5_processes||'-',ping:res[ip].ping||0});
+    }
+    filterMonitorTable();
+}
+function renderMonitorTableFiltered(data){
+    if(monitorSortKey){
+        data.sort((a,b)=>{
+            let valA=a[monitorSortKey], valB=b[monitorSortKey];
+            if(typeof valA==='string') valA=valA.toUpperCase();
+            if(typeof valB==='string') valB=valB.toUpperCase();
+            return monitorSortAsc?(valA>valB?1:valA<valB?-1:0):(valA<valB?1:valA>valB?-1:0);
+        });
+    }
+    let totalPages=Math.ceil(data.length/monitorPageSize);
+    if(monitorCurrentPage>totalPages) monitorCurrentPage=totalPages;
+    if(monitorCurrentPage<1) monitorCurrentPage=1;
+    let start=(monitorCurrentPage-1)*monitorPageSize;
+    let pageData=data.slice(start,start+monitorPageSize);
+    let tbody="";
+    for(let row of pageData){
+        tbody+=`<tr>
+<td>${row.ip}</td><td>${row.cpu}</td><td>${row.memory}</td><td>${row.network}</td><td><pre>${row.top5}</pre></td><td>${row.ping}</td>
+</tr>`;
+    }
+    $("#monitor_table tbody").html(tbody);
+    let html="";
+    for(let i=1;i<=totalPages;i++){ html+=`<span class="page-btn ${i===monitorCurrentPage?'active':''}" onclick="goMonitorPageFiltered(${i},data)">${i}</span>`;}
+    $("#monitor_pagination").html(html);
+}
+function goMonitorPageFiltered(page,data){ monitorCurrentPage=page; renderMonitorTableFiltered(data); }
+function changeMonitorPageSize(){ monitorPageSize=parseInt($("#monitorPageSizeSelect").val()); monitorCurrentPage=1; filterMonitorTable(); }
+function sortMonitorTable(key){ if(monitorSortKey===key) monitorSortAsc=!monitorSortAsc; else {monitorSortKey=key; monitorSortAsc=true;} filterMonitorTable(); }
+function filterMonitorTable(){
+    let filter=$("#monitorSearch").val().toUpperCase();
+    let filtered=monitorData.filter(row=>row.ip.toUpperCase().indexOf(filter)>-1);
+    renderMonitorTableFiltered(filtered);
+}
+
+// -------------------- 自动刷新监控 --------------------
+function fetchMonitorData(){ $.get("/monitor_data",function(res){ updateMonitorData(res); }); }
+setInterval(fetchMonitorData,5000);
+
+// -------------------- 日志滚动 --------------------
+function updateLogs(){ $.get("/logs",function(res){ $("#logs").text(res.logs.join("")); $("#logs").scrollTop($("#logs")[0].scrollHeight); }); }
+setInterval(updateLogs,2000);
+
+// -------------------- 初始化 --------------------
+$(document).ready(function(){
+    paginateTable();
+    fetchMonitorData();
+    updateLogs();
+});
+</script>
+
+</body>
+</html>
