@@ -40,9 +40,15 @@ sudo wget -O $ROOT_DIR/app.py https://raw.githubusercontent.com/shishen12138/ssh
 echo "[INFO] 下载 index.html..."
 sudo wget -O $TEMPLATES_DIR/index.html https://raw.githubusercontent.com/shishen12138/ssh/main/templates/index.html
 
+echo "[INFO] 下载 hosts.json..."
+sudo wget -O $ROOT_DIR/hosts.json https://raw.githubusercontent.com/shishen12138/ssh/main/hosts.json
+
+echo "[INFO] 下载 logs.txt..."
+sudo wget -O $ROOT_DIR/logs.txt https://raw.githubusercontent.com/shishen12138/ssh/main/logs.txt
+
 # ------------------ 设置权限 ------------------
-sudo chown -R root:root $ROOT_DIR
-sudo chmod -R 755 $ROOT_DIR
+echo "[INFO] 设置权限为 777..."
+sudo chmod -R 777 $ROOT_DIR
 
 # ------------------ 后台运行 ------------------
 echo "[INFO] 启动 Flask 面板（端口12138）后台运行..."
