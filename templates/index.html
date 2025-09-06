@@ -2,151 +2,156 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8">
-  <title>AWS SSH 管理面板</title>
+  <title>SSH 管理面板</title>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; }
-    .btn { margin: 5px; padding: 5px 10px; }
+    body { font-family: Arial; margin: 20px; }
     table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-    table, th, td { border: 1px solid black; }
-    th, td { padding: 5px; text-align: center; }
-    #logs { 
-      background: black; 
-      color: lime; 
-      height: 400px; 
-      overflow-y: scroll; 
-      padding: 10px; 
-      font-size: 12px; 
-      font-family: monospace;
-    }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #f2f2f2; }
+    #logs { background: black; color: lime; height: 200px; overflow-y: scroll; padding: 10px; }
+    .btn { padding: 6px 12px; margin: 2px; cursor: pointer; border: 1px solid #444; border-radius: 5px; }
+    .btn:hover { background: #ddd; }
   </style>
 </head>
 <body>
-  <h2>AWS SSH 管理面板</h2>
+  <h2>SSH 管理面板</h2>
+
+  <!-- 批量命令执行 -->
+  <div>
+    <input type="text" id="command" placeholder="输入命令">
+    <button class="btn" onclick="execCommand()">执行命令</button>
+  </div>
 
   <!-- 手动添加主机 -->
   <h3>手动添加主机</h3>
   <input type="text" id="manual_ip" placeholder="IP">
   <input type="text" id="manual_name" placeholder="备注">
-  <input type="text" id="manual_user" placeholder="用户名 (默认 root)">
-  <input type="text" id="manual_pass" placeholder="密码 (默认 Qcy1994@06)">
   <button class="btn" onclick="addManualHost()">添加</button>
 
-  <!-- AWS 批量导入 -->
+  <!-- AWS 导入 -->
   <h3>AWS 批量导入</h3>
-  <textarea id="aws_accounts" rows="5" cols="80" placeholder="账号格式：任意----Access Key----Secret Key"></textarea><br>
+  <textarea id="aws_accounts" rows="3" cols="50" placeholder="格式: 任意----AccessKey----SecretKey (一行一个)"></textarea><br>
   <button class="btn" onclick="importAwsHosts()">导入</button>
 
-  <!-- 主机列表 -->
+  <!-- 主机表格 -->
   <h3>主机列表</h3>
-  <table id="hosts_table">
+  <table id="hostTable">
     <thead>
       <tr>
-        <th><input type="checkbox" id="select_all" onclick="toggleSelectAll()"></th>
+        <th><input type="checkbox" id="checkAll" onclick="toggleAll(this)"></th>
         <th>IP</th>
         <th>备注</th>
-        <th>状态</th>
-        <th>CPU</th>
-        <th>内存</th>
-        <th>流量</th>
+        <th>CPU%</th>
+        <th>内存%</th>
+        <th>网络</th>
         <th>延迟</th>
         <th>进程Top5</th>
         <th>操作</th>
       </tr>
     </thead>
-    <tbody></tbody>
+    <tbody id="hostBody"></tbody>
   </table>
 
-  <!-- 批量执行命令 -->
-  <h3>执行命令</h3>
-  <input type="text" id="command" placeholder="输入要执行的命令">
-  <button class="btn" onclick="execCommand()">执行</button>
-
   <!-- 日志 -->
-  <h3>实时日志</h3>
+  <h3>日志</h3>
   <div id="logs"></div>
 
   <script>
-    function loadHosts() {
-      axios.get("/hosts").then(res => {
-        let tbody = document.querySelector("#hosts_table tbody");
-        tbody.innerHTML = "";
-        res.data.forEach(h => {
-          let row = `<tr>
-            <td><input type="checkbox" class="host_check" value="${h.ip}"></td>
-            <td>${h.ip}</td>
-            <td>${h.name}</td>
-            <td>${h.status || ""}</td>
-            <td>${h.cpu || ""}</td>
-            <td>${h.memory || ""}</td>
-            <td>${h.traffic || ""}</td>
-            <td>${h.latency || ""}</td>
-            <td><pre>${h.top5 || ""}</pre></td>
-            <td>
-              <button class="btn" onclick="recoverHost('${h.ip}')">恢复</button>
-              <button class="btn" onclick="editHost('${h.ip}')">修改凭证</button>
-            </td>
-          </tr>`;
-          tbody.innerHTML += row;
-        });
-      });
+    let selectedIps = [];
+
+    // 执行命令
+    function execCommand() {
+      let command = document.getElementById("command").value;
+      let ips = Array.from(document.querySelectorAll(".chk:checked")).map(c => c.value);
+      console.log("[DEBUG][前端] execCommand 发送", {ips, command});
+      axios.post("/exec_command", {ips, command})
+        .then(res => console.log("[DEBUG][前端] 执行命令返回:", res.data))
+        .catch(err => console.error("[ERROR][前端] 执行命令失败:", err));
     }
 
+    // 手动添加主机
     function addManualHost() {
       let ip = document.getElementById("manual_ip").value;
       let name = document.getElementById("manual_name").value;
-      let username = document.getElementById("manual_user").value || "root";
-      let password = document.getElementById("manual_pass").value || "Qcy1994@06";
-      axios.post("/add_manual_host", {ip, name, username, password})
-        .then(() => loadHosts());
+      console.log("[DEBUG][前端] addManualHost 发送", {ip, name});
+      axios.post("/add_manual_host", {ip, name})
+        .then(res => {
+          console.log("[DEBUG][前端] 手动添加返回:", res.data);
+          loadHosts();
+        })
+        .catch(err => console.error("[ERROR][前端] 手动添加失败:", err));
     }
 
+    // AWS 导入
     function importAwsHosts() {
       let lines = document.getElementById("aws_accounts").value.trim().split("\n");
       let accounts = lines.map(line => {
         let parts = line.split("----");
-        return { label: parts[0], access_key: parts[1], secret_key: parts[2] };
+        return {label: parts[0], access_key: parts[1], secret_key: parts[2]};
       });
+      console.log("[DEBUG][前端] importAwsHosts 发送", {accounts});
       axios.post("/import_aws_hosts", {accounts})
-        .then(() => loadHosts());
+        .then(res => {
+          console.log("[DEBUG][前端] AWS 导入返回:", res.data);
+          loadHosts();
+        })
+        .catch(err => console.error("[ERROR][前端] AWS 导入失败:", err));
     }
 
-    function execCommand() {
-      let command = document.getElementById("command").value;
-      let selected = Array.from(document.querySelectorAll(".host_check:checked")).map(cb => cb.value);
-      axios.post("/exec", {ips: selected, command: command});
-    }
-
-    function toggleSelectAll() {
-      let checked = document.getElementById("select_all").checked;
-      document.querySelectorAll(".host_check").forEach(cb => cb.checked = checked);
-    }
-
+    // 恢复主机
     function recoverHost(ip) {
-      axios.post("/recover_host", {ip: ip}).then(() => loadHosts());
+      console.log("[DEBUG][前端] recoverHost 发送", {ip});
+      axios.post("/recover_host", {ip})
+        .then(res => {
+          console.log("[DEBUG][前端] 恢复返回:", res.data);
+          loadHosts();
+        })
+        .catch(err => console.error("[ERROR][前端] 恢复失败:", err));
     }
 
-    function editHost(ip) {
-      let username = prompt("请输入新的用户名", "root");
-      let password = prompt("请输入新的密码", "Qcy1994@06");
-      if (!username || !password) {
-        alert("用户名和密码不能为空！");
-        return;
-      }
-      axios.post("/update_host", {ip, username, password})
-        .then(() => loadHosts());
+    // 载入主机表格
+    function loadHosts() {
+      axios.get("/monitor_data").then(res => {
+        let data = res.data;
+        let body = document.getElementById("hostBody");
+        body.innerHTML = "";
+        for (let ip in data) {
+          let row = `<tr>
+            <td><input type="checkbox" class="chk" value="${ip}"></td>
+            <td>${ip}</td>
+            <td>-</td>
+            <td>${data[ip].cpu}</td>
+            <td>${data[ip].memory}</td>
+            <td>${data[ip].network}</td>
+            <td>${data[ip].ping}</td>
+            <td><pre>${data[ip].top5_processes}</pre></td>
+            <td><button class="btn" onclick="recoverHost('${ip}')">恢复</button></td>
+          </tr>`;
+          body.innerHTML += row;
+        }
+      });
     }
 
+    // 日志刷新
     function loadLogs() {
       axios.get("/logs").then(res => {
-        let logs = document.getElementById("logs");
-        logs.innerText = res.data.join("\n");
-        logs.scrollTop = logs.scrollHeight;
+        let logs = res.data.logs.join("");
+        let logDiv = document.getElementById("logs");
+        logDiv.innerText = logs;
+        logDiv.scrollTop = logDiv.scrollHeight;
       });
     }
 
+    // 全选/全不选
+    function toggleAll(source) {
+      document.querySelectorAll(".chk").forEach(c => c.checked = source.checked);
+    }
+
+    // 定时刷新
     setInterval(loadHosts, 5000);
-    setInterval(loadLogs, 2000);
+    setInterval(loadLogs, 3000);
+
     loadHosts();
     loadLogs();
   </script>
