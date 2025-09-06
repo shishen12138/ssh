@@ -13,21 +13,21 @@ libbz2-dev
 # ------------------ Python 3.13.6 ------------------
 PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
 if [ "$PYTHON_VERSION" != "3.13.6" ]; then
-    echo "[INFO] 安装 Python 3.13.6..."
-    cd /tmp
-    wget https://www.python.org/ftp/python/3.13.6/Python-3.13.6.tgz
-    tar xzf Python-3.13.6.tgz
-    cd Python-3.13.6
-    ./configure --enable-optimizations
-    make -j$(nproc)
-    sudo make altinstall
+    echo "[INFO] 安装 Python 3.13.6..."
+    cd /tmp
+    wget https://www.python.org/ftp/python/3.13.6/Python-3.13.6.tgz
+    tar xzf Python-3.13.6.tgz
+    cd Python-3.13.6
+    ./configure --enable-optimizations
+    make -j$(nproc)
+    sudo make altinstall
 fi
 
 # ------------------ 安装 pip3 和库 ------------------
 echo "[INFO] 安装 pip3 和 Python 库..."
 python3.13 -m ensurepip --upgrade
 python3.13 -m pip install --upgrade pip
-python3.13 -m pip install flask flask-socketio eventlet paramiko boto3
+python3.13 -m pip install flask paramiko boto3
 
 # ------------------ 创建目录 ------------------
 echo "[INFO] 创建项目目录..."
