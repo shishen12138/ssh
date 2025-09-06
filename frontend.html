@@ -9,254 +9,253 @@
     .progress-bar.red { background-color: #dc3545 !important; }
     .progress-bar.yellow { background-color: #ffc107 !important; }
     .progress-bar.green { background-color: #198754 !important; }
-    #logbox { height: 360px; overflow:auto; background:#0b0b0b; color:#0f0; padding:8px; font-family: monospace; border-radius:4px;}
+    #logbox { height:360px; overflow:auto; background:#0b0b0b; color:#0f0; padding:8px; font-family: monospace; border-radius:4px;}
+    .form-inline .form-control { display:inline-block; width:auto; margin-right:5px; }
   </style>
 </head>
 <body class="p-3">
-  <div class="container-fluid">
-    <h3>AWS SSH 面板（前端）</h3>
-    <div class="row">
-      <div class="col-md-8">
-        <div class="card mb-2">
-          <div class="card-body">
-            <form id="awsForm" class="row g-2 align-items-center">
-              <div class="col-auto"><input class="form-control" id="aws_access" placeholder="AWS Access Key"></div>
-              <div class="col-auto"><input class="form-control" id="aws_secret" placeholder="AWS Secret Key"></div>
-              <div class="col-auto"><input class="form-control" id="aws_region" placeholder="region (e.g. us-east-1)" value="us-east-1"></div>
-              <div class="col-auto"><button id="importAwsBtn" class="btn btn-primary">导入 AWS 实例</button></div>
-            </form>
-          </div>
-        </div>
+<div class="container-fluid">
+  <h3>AWS SSH 面板（前端）</h3>
 
-        <div class="card mb-2">
-          <div class="card-body">
-            <div class="d-flex justify-content-between mb-2">
-              <div>
-                <button class="btn btn-sm btn-secondary" id="selectAllBtn">全选/全不选</button>
-                <button class="btn btn-sm btn-success" id="execBtn">执行命令</button>
-              </div>
-              <div>
-                <input id="cmdInput" class="form-control form-control-sm" style="width:400px;display:inline-block;" placeholder="要执行的命令，例如: uname -a">
-              </div>
+  <!-- AWS Key 导入 -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <form id="awsForm" class="row g-2 align-items-center">
+        <div class="col-auto">
+          <input class="form-control" id="aws_access" placeholder="AWS Access Key / 任意文本----access----secret">
+        </div>
+        <div class="col-auto">
+          <input class="form-control" id="aws_secret" placeholder="AWS Secret Key">
+        </div>
+        <div class="col-auto">
+          <input class="form-control" id="aws_region" placeholder="region (e.g. us-east-1)" value="us-east-1">
+        </div>
+        <div class="col-auto">
+          <button id="importAwsBtn" class="btn btn-primary">导入 AWS 实例</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- 主机表格和命令执行 -->
+    <div class="col-md-8">
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="d-flex justify-content-between mb-2 align-items-center">
+            <div>
+              <button class="btn btn-sm btn-secondary" id="selectAllBtn">全选/全不选</button>
+              <button class="btn btn-sm btn-success" id="execBtn">执行命令</button>
             </div>
-
-            <table class="table table-sm table-hover">
-              <thead>
-                <tr><th style="width:40px"></th><th>IP</th><th style="width:220px">CPU</th><th style="width:220px">内存</th><th>操作</th></tr>
-              </thead>
-              <tbody id="hostsTable"></tbody>
-            </table>
+            <div class="flex-grow-1 ms-2">
+              <input id="cmdInput" class="form-control form-control-sm" placeholder="要执行的命令，例如: uname -a">
+            </div>
           </div>
-        </div>
 
+          <table class="table table-sm table-hover">
+            <thead>
+              <tr><th style="width:40px"></th><th>IP</th><th style="width:220px">CPU</th><th style="width:220px">内存</th><th>操作</th></tr>
+            </thead>
+            <tbody id="hostsTable"></tbody>
+          </table>
+        </div>
       </div>
-      <div class="col-md-4">
-        <div class="card mb-2">
-          <div class="card-body">
-            <h6>日志</h6>
-            <div id="logbox"></div>
-          </div>
+    </div>
+
+    <!-- 日志 & 手动添加主机 -->
+    <div class="col-md-4">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h6>日志</h6>
+          <div id="logbox"></div>
         </div>
-        <div class="card">
-          <div class="card-body">
-            <h6>手动添加主机</h6>
-            <div class="input-group mb-2">
-              <input id="add_ip" class="form-control" placeholder="IP地址">
-              <input id="add_user" class="form-control" placeholder="用户" value="root">
-              <input id="add_pass" class="form-control" placeholder="密码" value="Qcy1994@06">
-              <button id="addHostBtn" class="btn btn-primary">添加</button>
-            </div>
-            <small class="text-muted">默认用户名 root，默认密码 Qcy1994@06。添加后系统会尝试建立长期 SSH 连接。</small>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <h6>手动添加主机</h6>
+          <div class="input-group mb-2">
+            <input id="add_ip" class="form-control" placeholder="IP地址">
+            <input id="add_user" class="form-control" placeholder="用户" value="root">
+            <input id="add_pass" class="form-control" placeholder="密码" value="Qcy1994@06">
+            <button id="addHostBtn" class="btn btn-primary">添加</button>
           </div>
+          <small class="text-muted">默认用户名 root，默认密码 Qcy1994@06。添加后系统会尝试建立长期 SSH 连接。</small>
         </div>
       </div>
     </div>
   </div>
+</div>
 
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
-  // 请根据后端地址调整，如果前端与后端同机可留空
-  const backendBase = ''; // e.g. '' or 'http://your-server:12138'
-  const socket = io(backendBase);
+const backendBase = ''; // 与后端同机可留空
+const socket = io(backendBase);
 
-  const hostsTable = document.getElementById('hostsTable');
-  const logbox = document.getElementById('logbox');
-  let hosts = [];
+const hostsTable = document.getElementById('hostsTable');
+const logbox = document.getElementById('logbox');
+let hosts = [];
 
-  function appendLog(ts, msg){
-    const line = document.createElement('div');
-    line.textContent = `[${ts}] ${msg}`;
-    logbox.appendChild(line);
-    logbox.scrollTop = logbox.scrollHeight;
-  }
+function appendLog(ts,msg){
+  const line = document.createElement('div');
+  line.textContent = `[${ts}] ${msg}`;
+  logbox.appendChild(line);
+  logbox.scrollTop = logbox.scrollHeight;
+}
 
-  socket.on('connect', ()=>{
-    appendLog(new Date().toLocaleString(), '已连接到后端 Socket.IO');
-    fetchHosts();
-  });
-
-  socket.on('log', (d)=>{
-    appendLog(d.ts, d.msg);
-  });
-
-  socket.on('host_metrics', (d)=>{
-    // 更新对应主机的 CPU/MEM 显示（id, cpu, mem）
-    const el = document.querySelector(`[data-id='${d.id}']`);
-    if (!el) return;
-    const cpuBar = el.querySelector('.cpu-bar');
-    const memBar = el.querySelector('.mem-bar');
-    if (d.cpu !== undefined){
-      cpuBar.style.width = d.cpu + '%';
-      cpuBar.textContent = d.cpu + '%';
-      cpuBar.classList.remove('red','yellow','green');
-      if (d.cpu < 60) cpuBar.classList.add('green');
-      else if (d.cpu < 85) cpuBar.classList.add('yellow');
-      else cpuBar.classList.add('red');
-    }
-    if (d.mem !== undefined){
-      memBar.style.width = d.mem + '%';
-      memBar.textContent = d.mem + '%';
-      memBar.classList.remove('red','yellow','green');
-      if (d.mem < 60) memBar.classList.add('green');
-      else if (d.mem < 85) memBar.classList.add('yellow');
-      else memBar.classList.add('red');
-    }
-  });
-
-  // fetch hosts and render
-  function fetchHosts(){
-    fetch(backendBase + '/hosts').then(r=>r.json()).then(data=>{
-      hosts = data;
-      renderHosts();
-    }).catch(err=>{
-      appendLog(new Date().toLocaleString(), '获取主机列表失败: ' + err);
-    });
-  }
-
-  function renderHosts(){
-    hostsTable.innerHTML = '';
-    hosts.forEach(h=>{
-      const tr = document.createElement('tr');
-      tr.setAttribute('data-id', h.id);
-      tr.innerHTML = `
-        <td><input type='checkbox' class='hchk' data-id='${h.id}' ${h.selected? 'checked':''}></td>
-        <td>${h.ip}</td>
-        <td><div class='progress' style='height:22px'><div class='progress-bar cpu-bar' role='progressbar' style='width:${h.cpu}%'>${h.cpu}%</div></div></td>
-        <td><div class='progress' style='height:22px'><div class='progress-bar mem-bar' role='progressbar' style='width:${h.mem}%'>${h.mem}%</div></div></td>
-        <td>
-          <button class='btn btn-sm btn-warning changePassBtn'>修改密码</button>
-        </td>
-      `;
-      hostsTable.appendChild(tr);
-      // colorize
-      const cpuBar = tr.querySelector('.cpu-bar');
-      const memBar = tr.querySelector('.mem-bar');
-      cpuBar.classList.add(h.cpu<60? 'green':(h.cpu<85? 'yellow':'red'));
-      memBar.classList.add(h.mem<60? 'green':(h.mem<85? 'yellow':'red'));
-    });
-    // attach events
-    document.querySelectorAll('.hchk').forEach(cb=> cb.onchange = onHostCheckChange);
-    document.querySelectorAll('.changePassBtn').forEach(btn=> btn.onclick = onChangePass);
-  }
-
-  function onHostCheckChange(e){
-    const id = e.target.dataset.id;
-    const checked = e.target.checked;
-    hosts = hosts.map(h=> h.id===id ? {...h, selected: checked} : h);
-    // persist by saving hosts back to backend: we don't have dedicated save endpoint; instead just rely on adding/refreshing
-    // to keep simple, no persistence here (backend maintains selection only in-memory). Optionally you can implement save endpoint.
-  }
-
-  document.getElementById('selectAllBtn').onclick = ()=>{
-    const anyUnselected = hosts.some(h=> !h.selected);
-    hosts = hosts.map(h=> ({...h, selected: anyUnselected}));
-    renderHosts();
-  };
-
-  document.getElementById('addHostBtn').onclick = ()=>{
-    const ip = document.getElementById('add_ip').value.trim();
-    const user = document.getElementById('add_user').value.trim() || 'root';
-    const pass = document.getElementById('add_pass').value.trim() || 'Qcy1994@06';
-    if (!ip) return alert('请输入 IP');
-    fetch(backendBase + '/add_host', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ip, user, password: pass})
-    }).then(r=>r.json()).then(d=>{
-      if (d.ok){
-        appendLog(new Date().toLocaleString(), '已添加主机 ' + ip);
-        setTimeout(fetchHosts, 800);
-      } else {
-        alert('添加失败: ' + d.error);
-      }
-    }).catch(err=>{
-      alert('添加失败: ' + err);
-    });
-  };
-
-  document.getElementById('importAwsBtn').onclick = (e)=>{
-    e.preventDefault();
-    const access = document.getElementById('aws_access').value.trim();
-    const secret = document.getElementById('aws_secret').value.trim();
-    const region = document.getElementById('aws_region').value.trim() || 'us-east-1';
-    if (!access || !secret) return alert('请输入 AWS Key');
-    fetch(backendBase + '/import_aws', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({access_key: access, secret_key: secret, region})
-    }).then(r=>r.json()).then(d=>{
-      if (d.ok){
-        appendLog(new Date().toLocaleString(), `导入完成: ${d.added} 台`);
-        setTimeout(fetchHosts, 1000);
-      } else {
-        alert('导入失败: ' + d.error);
-      }
-    }).catch(err=>{
-      alert('导入失败: ' + err);
-    });
-  };
-
-  document.getElementById('execBtn').onclick = ()=>{
-    const cmd = document.getElementById('cmdInput').value.trim();
-    if (!cmd) return alert('请输入命令');
-    const ids = hosts.filter(h=> h.selected).map(h=> h.id);
-    if (ids.length === 0) return alert('请先选择主机');
-    fetch(backendBase + '/run_command', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({hosts: ids, command: cmd})
-    }).then(r=>r.json()).then(d=>{
-      if (d.ok){
-        appendLog(new Date().toLocaleString(), '命令已加入队列: ' + cmd);
-      } else {
-        alert('提交失败: ' + d.error);
-      }
-    }).catch(err=>{
-      alert('提交失败: ' + err);
-    });
-  };
-
-  function onChangePass(e){
-    const tr = e.target.closest('tr');
-    const id = tr.getAttribute('data-id');
-    const newp = prompt('输入新的密码:');
-    if (!newp) return;
-    // 使用 chpasswd 修改 root 密码（在目标主机上执行）
-    const cmd = `echo 'root:${newp}' | chpasswd`;
-    fetch(backendBase + '/run_command', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({hosts: [id], command: cmd})
-    }).then(r=>r.json()).then(d=>{
-      if (d.ok) appendLog(new Date().toLocaleString(), `提交修改密码命令到 ${id}`);
-      else alert('提交失败: ' + d.error);
-    });
-  }
-
-  // 定时刷新 hosts（用于首次加载与添加后）
-  setInterval(fetchHosts, 8000);
+socket.on('connect', ()=>{
+  appendLog(new Date().toLocaleString(),'已连接到后端 Socket.IO');
   fetchHosts();
+});
 
+socket.on('log',(d)=>appendLog(d.ts,d.msg));
+
+socket.on('host_metrics',(d)=>{
+  const el = document.querySelector(`[data-id='${d.id}']`);
+  if(!el) return;
+  const cpuBar = el.querySelector('.cpu-bar');
+  const memBar = el.querySelector('.mem-bar');
+  if(d.cpu!==undefined){
+    cpuBar.style.width = d.cpu+'%';
+    cpuBar.textContent=d.cpu+'%';
+    cpuBar.classList.remove('red','yellow','green');
+    if(d.cpu<60) cpuBar.classList.add('green');
+    else if(d.cpu<85) cpuBar.classList.add('yellow');
+    else cpuBar.classList.add('red');
+  }
+  if(d.mem!==undefined){
+    memBar.style.width=d.mem+'%';
+    memBar.textContent=d.mem+'%';
+    memBar.classList.remove('red','yellow','green');
+    if(d.mem<60) memBar.classList.add('green');
+    else if(d.mem<85) memBar.classList.add('yellow');
+    else memBar.classList.add('red');
+  }
+});
+
+// fetch hosts and render
+function fetchHosts(){
+  fetch(backendBase+'/hosts').then(r=>r.json()).then(data=>{
+    hosts=data;
+    renderHosts();
+  }).catch(err=>{
+    appendLog(new Date().toLocaleString(),'获取主机列表失败: '+err);
+  });
+}
+
+function renderHosts(){
+  hostsTable.innerHTML='';
+  hosts.forEach(h=>{
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-id',h.id);
+    tr.innerHTML = `
+      <td><input type='checkbox' class='hchk' data-id='${h.id}' ${h.selected?'checked':''}></td>
+      <td>${h.ip}</td>
+      <td><div class='progress' style='height:22px'><div class='progress-bar cpu-bar' role='progressbar' style='width:${h.cpu}%'>${h.cpu}%</div></div></td>
+      <td><div class='progress' style='height:22px'><div class='progress-bar mem-bar' role='progressbar' style='width:${h.mem}%'>${h.mem}%</div></div></td>
+      <td><button class='btn btn-sm btn-warning changePassBtn'>修改密码</button></td>
+    `;
+    hostsTable.appendChild(tr);
+    const cpuBar = tr.querySelector('.cpu-bar');
+    const memBar = tr.querySelector('.mem-bar');
+    cpuBar.classList.add(h.cpu<60?'green':(h.cpu<85?'yellow':'red'));
+    memBar.classList.add(h.mem<60?'green':(h.mem<85?'yellow':'red'));
+  });
+  document.querySelectorAll('.hchk').forEach(cb=>cb.onchange=onHostCheckChange);
+  document.querySelectorAll('.changePassBtn').forEach(btn=>btn.onclick=onChangePass);
+}
+
+function onHostCheckChange(e){
+  const id=e.target.dataset.id;
+  const checked=e.target.checked;
+  hosts=hosts.map(h=>h.id===id?{...h,selected:checked}:h);
+}
+
+document.getElementById('selectAllBtn').onclick=()=>{
+  const anyUnselected=hosts.some(h=>!h.selected);
+  hosts=hosts.map(h=>({...h,selected:anyUnselected}));
+  renderHosts();
+};
+
+document.getElementById('addHostBtn').onclick=()=>{
+  const ip=document.getElementById('add_ip').value.trim();
+  const user=document.getElementById('add_user').value.trim()||'root';
+  const pass=document.getElementById('add_pass').value.trim()||'Qcy1994@06';
+  if(!ip) return alert('请输入 IP');
+  fetch(backendBase+'/add_host',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ip,user,password:pass})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok){
+      appendLog(new Date().toLocaleString(),'已添加主机 '+ip);
+      setTimeout(fetchHosts,800);
+    }else alert('添加失败: '+d.error);
+  }).catch(err=>alert('添加失败: '+err));
+};
+
+document.getElementById('importAwsBtn').onclick=(e)=>{
+  e.preventDefault();
+  let access=document.getElementById('aws_access').value.trim();
+  let secret=document.getElementById('aws_secret').value.trim();
+  const region=document.getElementById('aws_region').value.trim()||'us-east-1';
+
+  const parts=access.split('----');
+  if(parts.length===3){
+    access=parts[1].trim();
+    secret=parts[2].trim();
+  }else if(parts.length===2){
+    access=parts[0].trim();
+    secret=parts[1].trim();
+  }
+
+  if(!access||!secret) return alert('请输入有效 AWS Key');
+
+  fetch(backendBase+'/import_aws',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({access_key:access,secret_key:secret,region})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok){
+      appendLog(new Date().toLocaleString(),`导入完成: ${d.added} 台`);
+      setTimeout(fetchHosts,1000);
+    }else alert('导入失败: '+d.error);
+  }).catch(err=>alert('导入失败: '+err));
+};
+
+document.getElementById('execBtn').onclick=()=>{
+  const cmd=document.getElementById('cmdInput').value.trim();
+  if(!cmd) return alert('请输入命令');
+  const ids=hosts.filter(h=>h.selected).map(h=>h.id);
+  if(ids.length===0) return alert('请先选择主机');
+  fetch(backendBase+'/run_command',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({hosts:ids,command:cmd})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok) appendLog(new Date().toLocaleString(),'命令已加入队列: '+cmd);
+    else alert('提交失败: '+d.error);
+  }).catch(err=>alert('提交失败: '+err));
+};
+
+function onChangePass(e){
+  const tr=e.target.closest('tr');
+  const id=tr.getAttribute('data-id');
+  const newp=prompt('输入新的密码:');
+  if(!newp) return;
+  const cmd=`echo 'root:${newp}' | chpasswd`;
+  fetch(backendBase+'/run_command',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({hosts:[id],command:cmd})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok) appendLog(new Date().toLocaleString(),`提交修改密码命令到 ${id}`);
+    else alert('提交失败: '+d.error);
+  });
+}
+
+setInterval(fetchHosts,8000);
+fetchHosts();
 </script>
 </body>
 </html>
