@@ -23,8 +23,10 @@ def save_hosts(hosts):
         json.dump(hosts,f,indent=2)
 
 def append_log(text):
+    line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {text}"
+    print(line)  # 同时输出到控制台
     with open(LOG_FILE,"a") as f:
-        f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {text}\n")
+        f.write(line + "\n")
 
 def read_logs():
     if not os.path.exists(LOG_FILE):
@@ -36,12 +38,14 @@ def read_logs():
 @app.route("/")
 def index():
     hosts = load_hosts()
+    append_log(f"[DEBUG] 访问首页，共有 {len(hosts)} 台主机")
     return render_template("index.html", hosts=hosts)
 
 # -------------------- 手动添加主机 --------------------
 @app.route("/add_manual_host", methods=["POST"])
 def add_manual_host():
     data = request.json
+    append_log(f"[DEBUG] /add_manual_host 收到: {data}")
     hosts = load_hosts()
     hosts.append({
         "ip": data["ip"],
@@ -58,15 +62,18 @@ def add_manual_host():
 @app.route("/import_aws_hosts", methods=["POST"])
 def import_aws_hosts():
     data = request.json
+    append_log(f"[DEBUG] /import_aws_hosts 收到: {data}")
     accounts = data["accounts"]
     hosts = load_hosts()
     count = 0
 
     for acc in accounts:
         try:
+            append_log(f"[DEBUG] 尝试连接 AWS: {acc['label']}")
             session = boto3.Session(
                 aws_access_key_id=acc["access_key"],
-                aws_secret_access_key=acc["secret_key"]
+                aws_secret_access_key=acc["secret_key"],
+                region_name="us-east-1"   # 默认区域
             )
             ec2 = session.resource("ec2")
             instances = ec2.instances.filter(Filters=[{'Name':'instance-state-name','Values':['running']}])
@@ -96,24 +103,25 @@ def import_aws_hosts():
 @app.route("/recover_host", methods=["POST"])
 def recover_host():
     ip = request.json["ip"]
+    append_log(f"[DEBUG] /recover_host 收到 IP={ip}")
     hosts = load_hosts()
 
     target_host = next((h for h in hosts if h["ip"]==ip and h.get("source")=="aws"), None)
     if not target_host:
+        append_log("[ERROR] 未找到目标主机")
         return jsonify({"error":"未找到该主机或非 AWS 来源"}), 400
 
     access_key = target_host["access_key"]
     secret_key = target_host["secret_key"]
 
-    # 删除同 Key 下所有主机
     hosts = [h for h in hosts if h.get("access_key") != access_key]
     append_log(f"[恢复] 删除旧主机 (Access Key: {access_key})")
 
-    # 使用 AWS API 重新拉取运行中实例
     try:
         session = boto3.Session(
             aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key
+            aws_secret_access_key=secret_key,
+            region_name="us-east-1"
         )
         ec2 = session.resource("ec2")
         instances = ec2.instances.filter(Filters=[{'Name':'instance-state-name','Values':['running']}])
@@ -142,24 +150,32 @@ def recover_host():
 # -------------------- SSH 执行命令 --------------------
 @app.route("/exec_command", methods=["POST"])
 def exec_command():
-    data = request.json
-    ips = data["ips"]
-    command = data["command"]
-    hosts = load_hosts()
-    for h in hosts:
-        if h["ip"] in ips:
-            threading.Thread(target=run_ssh, args=(h,command)).start()
-    return jsonify({"status":"ok"})
+    try:
+        data = request.json
+        append_log(f"[DEBUG] /exec_command 收到: {data}")
+        if not data:
+            return jsonify({"error":"未收到数据"}), 400
+
+        ips = data.get("ips", [])
+        command = data.get("command", "")
+        hosts = load_hosts()
+        for h in hosts:
+            if h["ip"] in ips:
+                append_log(f"[DEBUG] 准备执行 {command} on {h['ip']}")
+                threading.Thread(target=run_ssh, args=(h,command)).start()
+        return jsonify({"status":"ok"})
+    except Exception as e:
+        append_log(f"[ERROR] /exec_command 异常: {e}")
+        return jsonify({"error": str(e)}), 500
 
 def run_ssh(host, command):
     ip = host["ip"]
-    username = host.get("username","root")
-    password = host.get("password","Qcy1994@06")
-    append_log(f"[SSH] {ip} 执行: {command}")
+    append_log(f"[DEBUG] run_ssh 被调用: {ip}, command={command}")
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(ip, username=username, password=password, timeout=5)
+        ssh.connect(ip, username=host.get("username","root"), password=host.get("password","Qcy1994@06"), timeout=5)
+        append_log(f"[DEBUG] 已连接 {ip}")
         stdin, stdout, stderr = ssh.exec_command(command)
         output = stdout.read().decode()
         err = stderr.read().decode()
@@ -171,18 +187,17 @@ def run_ssh(host, command):
 # -------------------- 多线程实时监控 --------------------
 def fetch_host_monitor(host):
     ip = host["ip"]
-    username = host.get("username", "root")
-    password = host.get("password", "Qcy1994@06")
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(ip, username=username, password=password, timeout=5)
+        ssh.connect(ip, username=host.get("username","root"), password=host.get("password","Qcy1994@06"), timeout=5)
+        append_log(f"[DEBUG] 监控连接成功 {ip}")
 
         stdin, stdout, stderr = ssh.exec_command("top -bn1 | grep 'Cpu(s)' | awk '{print $2+$4}'")
-        cpu = float(stdout.read().decode().strip())
+        cpu = float(stdout.read().decode().strip() or 0)
 
         stdin, stdout, stderr = ssh.exec_command("free | grep Mem | awk '{print $3/$2 * 100.0}'")
-        memory = float(stdout.read().decode().strip())
+        memory = float(stdout.read().decode().strip() or 0)
 
         stdin, stdout, stderr = ssh.exec_command("cat /proc/net/dev | awk 'NR>2{rx+=$2; tx+=$10} END{print rx/1024\"/\"tx/1024}'")
         network = stdout.read().decode().strip()
@@ -205,16 +220,9 @@ def fetch_host_monitor(host):
             "top5_processes": top5,
             "ping": ping
         }
-
     except Exception as e:
         append_log(f"[监控失败] {ip}: {e}")
-        return ip, {
-            "cpu": 0,
-            "memory": 0,
-            "network": "-",
-            "top5_processes": "-",
-            "ping": -1
-        }
+        return ip, {"cpu":0,"memory":0,"network":"-","top5_processes":"-","ping":-1}
 
 def update_monitor():
     while True:
@@ -235,9 +243,10 @@ def monitor_data():
 def logs():
     return jsonify({"logs": read_logs()})
 
-# -------------------- 启动后台线程 --------------------
+# -------------------- 启动后台监控 --------------------
 threading.Thread(target=update_monitor, daemon=True).start()
 
 # -------------------- 启动 Flask --------------------
 if __name__ == "__main__":
+    append_log("[DEBUG] Flask 服务启动中...")
     app.run(host="0.0.0.0", port=12138, debug=True)
