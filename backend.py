@@ -8,7 +8,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 HOSTS_FILE = "hosts.json"
 LOGS = []
-LOCK = threading.Lock()  # 文件操作锁
+LOCK = threading.Lock()  # 保存 hosts 文件加锁
 
 # ----------------- 数据操作 -----------------
 def load_hosts():
@@ -53,7 +53,7 @@ async def import_aws_instances_async(raw_key, websocket, default_user="root", de
         return []
 
     await websocket.send_json({"log": "开始导入 AWS 实例..."})
-    hosts = load_hosts()  # 改为追加，而不是覆盖
+    hosts = load_hosts()  # 读取已有实例，支持追加
 
     try:
         ec2_client = boto3.client('ec2', aws_access_key_id=access_key, aws_secret_access_key=secret_key, region_name='us-east-1')
@@ -74,6 +74,9 @@ async def import_aws_instances_async(raw_key, websocket, default_user="root", de
                             continue
                         launch_time = inst['LaunchTime']
                         runtime_days = (datetime.datetime.utcnow() - launch_time.replace(tzinfo=None)).days
+                        # 检查是否已有相同 IP
+                        if ip in [h['ip'] for h in hosts]:
+                            continue
                         host_info = {
                             "ip": ip,
                             "username": default_user,
@@ -84,18 +87,14 @@ async def import_aws_instances_async(raw_key, websocket, default_user="root", de
                             "runtime_days": runtime_days,
                             "status": "green"
                         }
-                        # 避免重复
-                        if ip not in [h["ip"] for h in hosts]:
-                            hosts.append(host_info)
-                            await websocket.send_json({"log": f"发现实例 {ip}"})
-                            await websocket.send_json({"action":"update_host","host":host_info})
-                        await asyncio.sleep(0.05)  # 让出事件循环
+                        hosts.append(host_info)
+                        await websocket.send_json({"action":"update_host","host":host_info})
+                        await websocket.send_json({"log": f"新增实例: {ip}"})
             except Exception as e:
                 await websocket.send_json({"log": f"区域 {region} 访问失败: {e}"})
 
         save_hosts(hosts)
         await websocket.send_json({"log": f"AWS 实例导入完成，共 {len(hosts)} 台"})
-
     except Exception as e:
         await websocket.send_json({"log": f"AWS 导入异常: {e}"})
 
@@ -167,7 +166,7 @@ async def monitor_host(host, websocket):
             ssh.close()
             await asyncio.sleep(5)
         except Exception as e:
-            await websocket.send_json({"log": f"{datetime.datetime.now()} - 监控 {ip} 异常: {e}"})
+            await websocket.send_json({"log": f"{ip} 监控异常: {e}"})
             await asyncio.sleep(5)
             continue
 
@@ -208,7 +207,7 @@ async def websocket_endpoint(ws: WebSocket):
         elif action == "import_aws":
             raw_key = data.get("aws_key_id")
             if raw_key:
-                asyncio.create_task(import_aws_instances_async(raw_key, ws))
+                await import_aws_instances_async(raw_key, ws)
 
 # ----------------- 前端 -----------------
 @app.get("/")
