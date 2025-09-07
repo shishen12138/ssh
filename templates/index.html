@@ -1,163 +1,115 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <title>SSH 管理面板</title>
-  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-  <style>
-    /* 页面自适应 */
-    body { font-family: Arial; margin: 20px; max-width: 1200px; margin-left: auto; margin-right: auto; }
-
-    /* 表格样式 */
-    table { border-collapse: collapse; width: 100%; margin-top: 20px; table-layout: fixed; word-wrap: break-word; }
-    th, td { border: 1px solid #ddd; padding: 6px; font-size: 13px; }
-    th { background: #f2f2f2; }
-
-    /* 日志框 */
-    #logs { 
-      background: black; 
-      color: lime; 
-      height: 300px; 
-      overflow-y: scroll; 
-      padding: 10px; 
-      font-size: 12px; 
-      line-height: 1.2em;
-    }
-
-    /* 按钮 */
-    .btn { padding: 5px 10px; margin: 2px; cursor: pointer; border: 1px solid #444; border-radius: 5px; font-size: 12px; }
-    .btn:hover { background: #ddd; }
-
-    /* 输入框 */
-    input, textarea { padding: 4px; margin: 2px; font-size: 12px; }
-    #aws_accounts { width: 100%; height: 90px; font-size: 10px; }
-
-    /* 表格内容自适应 */
-    pre { margin: 0; font-size: 12px; white-space: pre-wrap; word-wrap: break-word; }
-  </style>
+<meta charset="UTF-8">
+<title>AWS SSH 管理面板</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+.progress-bar { height: 16px; border-radius: 4px; }
+#log { background-color: black; color: lime; font-family: monospace; }
+</style>
 </head>
-<body>
-  <h2>SSH 管理面板</h2>
+<body class="p-4">
 
-  <!-- 批量命令执行 -->
-  <div style="margin-bottom:10px;">
-    <input type="text" id="command" placeholder="输入命令" style="width:60%;">
-    <button class="btn" onclick="execCommand()">执行命令</button>
-  </div>
+<h1 class="text-2xl font-bold mb-4">AWS SSH 批量管理面板</h1>
 
-  <!-- 手动添加主机 -->
-  <h3>手动添加主机</h3>
-  <input type="text" id="manual_ip" placeholder="IP">
-  <input type="text" id="manual_name" placeholder="备注">
-  <button class="btn" onclick="addManualHost()">添加</button>
+<!-- AWS Key 导入 -->
+<div class="mb-4">
+  <input id="aws_key_id" type="text" placeholder="AccessKey----SecretKey 或 任意前缀----AccessKey----SecretKey" class="border p-1 mr-2 w-1/3">
+  <button onclick="importAWS()" class="bg-green-500 text-white px-2 py-1 rounded">导入实例</button>
+</div>
 
-  <!-- AWS 导入 -->
-  <h3>AWS 批量导入</h3>
-  <textarea id="aws_accounts" placeholder="格式: 任意----AccessKey----SecretKey (一行一个)"></textarea><br>
-  <button class="btn" onclick="importAwsHosts()">导入</button>
+<!-- 命令输入 -->
+<div class="mb-4">
+  <input id="command" type="text" placeholder="输入命令" class="border p-1 w-1/2 mr-2">
+  <button onclick="executeCommand()" class="bg-blue-500 text-white px-2 py-1 rounded">执行命令</button>
+</div>
 
-  <!-- 主机表格 -->
-  <h3>主机列表</h3>
-  <table id="hostTable">
-    <thead>
-      <tr>
-        <th><input type="checkbox" id="checkAll" onclick="toggleAll(this)"></th>
-        <th>IP</th>
-        <th>备注</th>
-        <th>CPU%</th>
-        <th>内存%</th>
-        <th>网络</th>
-        <th>延迟</th>
-        <th>进程Top5</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody id="hostBody"></tbody>
-  </table>
+<!-- 主机列表 -->
+<table class="table-auto border-collapse border border-gray-400 w-full mb-4">
+<thead>
+<tr class="bg-gray-200">
+<th><input type="checkbox" id="select_all" onchange="selectAll(this)"/></th>
+<th>IP</th><th>CPU</th><th>内存</th><th>运行天数</th><th>状态</th><th>操作</th>
+</tr>
+</thead>
+<tbody id="host_table"></tbody>
+</table>
 
-  <!-- 日志 -->
-  <h3>日志</h3>
-  <div id="logs"></div>
+<!-- 日志 -->
+<h2 class="font-bold">日志</h2>
+<div id="log" class="border h-48 overflow-auto p-2 mb-4"></div>
 
-  <script>
-    function execCommand() {
-      let command = document.getElementById("command").value;
-      let ips = Array.from(document.querySelectorAll(".chk:checked")).map(c => c.value);
-      axios.post("/exec_command", {ips, command})
-        .then(res => console.log("执行命令返回:", res.data))
-        .catch(err => console.error("执行命令失败:", err));
-    }
+<script>
+let ws = new WebSocket("ws://localhost:12138/ws");
 
-    function addManualHost() {
-      let ip = document.getElementById("manual_ip").value;
-      let name = document.getElementById("manual_name").value;
-      axios.post("/add_manual_host", {ip, name})
-        .then(res => { loadHosts(); })
-        .catch(err => console.error("手动添加失败:", err));
-    }
-
-    function importAwsHosts() {
-      let lines = document.getElementById("aws_accounts").value.trim().split("\n");
-      let accounts = lines.map(line => {
-        let parts = line.split("----");
-        return {label: parts[0], access_key: parts[1], secret_key: parts[2]};
-      });
-      axios.post("/import_aws_hosts", {accounts})
-        .then(res => { loadHosts(); })
-        .catch(err => console.error("AWS 导入失败:", err));
-    }
-
-    function recoverHost(ip) {
-      axios.post("/recover_host", {ip})
-        .then(res => { loadHosts(); })
-        .catch(err => console.error("恢复失败:", err));
-    }
-
-    function loadHosts() {
-      axios.get("/monitor_data").then(res => {
-        let data = res.data;
-        let body = document.getElementById("hostBody");
-        body.innerHTML = "";
-        let fragment = document.createDocumentFragment();
-
-        for (let ip in data) {
-          let tr = document.createElement('tr');
-          let host = data[ip];
-          tr.innerHTML = `
-            <td><input type="checkbox" class="chk" value="${ip}"></td>
-            <td>${ip}</td>
-            <td>${host.name || '-'}</td>
-            <td>${host.cpu}</td>
-            <td>${host.memory}</td>
-            <td>${host.network}</td>
-            <td>${host.ping}</td>
-            <td><pre>${host.top5_processes}</pre></td>
-            <td>${host.source === 'aws' ? `<button class="btn" onclick="recoverHost('${ip}')">恢复</button>` : ''}</td>
-          `;
-          fragment.appendChild(tr);
-        }
-
-        body.appendChild(fragment);
-      });
-    }
-
-    function loadLogs() {
-      axios.get("/logs").then(res => {
-        let logDiv = document.getElementById("logs");
-        logDiv.innerText = res.data.logs.join("");
+ws.onopen = ()=>{ ws.send(JSON.stringify({action:"get_hosts"})); };
+ws.onmessage = (event)=>{
+    let data = JSON.parse(event.data);
+    if(data.log){
+        let logDiv = document.getElementById("log");
+        logDiv.innerHTML += data.log + "<br>";
         logDiv.scrollTop = logDiv.scrollHeight;
-      });
     }
-
-    function toggleAll(source) {
-      document.querySelectorAll(".chk").forEach(c => c.checked = source.checked);
+    if(data.action=="update_host"){
+        updateHostRow(data.host);
     }
+};
 
-    setInterval(loadHosts, 5000);
-    setInterval(loadLogs, 3000);
+function updateHostRow(host){
+    let tbody = document.getElementById("host_table");
+    let row = document.getElementById("row_"+host.ip);
+    let cpuColor = host.cpu>80?"bg-red-500":host.cpu>50?"bg-yellow-500":"bg-green-500";
+    let memColor = host.memory>80?"bg-red-500":host.memory>50?"bg-yellow-500":"bg-green-500";
+    if(!row){
+        row = document.createElement("tr");
+        row.id = "row_"+host.ip;
+        row.innerHTML = `
+        <td><input type="checkbox" name="host" value="${host.ip}"></td>
+        <td>${host.ip}</td>
+        <td><div class="w-24 border"><div class="progress-bar ${cpuColor}" style="width:${host.cpu}%"></div></div>${host.cpu}%</td>
+        <td><div class="w-24 border"><div class="progress-bar ${memColor}" style="width:${host.memory}%"></div></div>${host.memory}%</td>
+        <td>${host.runtime_days}</td>
+        <td>${host.status}</td>
+        <td><button onclick="changePassword('${host.ip}')" class="bg-yellow-500 text-white px-1 rounded">修改密码</button></td>
+        `;
+        tbody.appendChild(row);
+    }else{
+        row.cells[2].innerHTML = `<div class="w-24 border"><div class="progress-bar ${cpuColor}" style="width:${host.cpu}%"></div></div>${host.cpu}%`;
+        row.cells[3].innerHTML = `<div class="w-24 border"><div class="progress-bar ${memColor}" style="width:${host.memory}%"></div></div>${host.memory}%`;
+        row.cells[4].innerText = host.runtime_days;
+        row.cells[5].innerText = host.status;
+    }
+}
 
-    loadHosts();
-    loadLogs();
-  </script>
+function executeCommand(){
+    let ips = Array.from(document.querySelectorAll('input[name="host"]:checked')).map(cb=>cb.value);
+    let cmd = document.getElementById("command").value;
+    ws.send(JSON.stringify({action:"exec", ips: ips, command: cmd}));
+}
+
+function selectAll(cb){
+    let checked = cb.checked;
+    document.querySelectorAll('input[name="host"]').forEach(ch=>ch.checked=checked);
+}
+
+function changePassword(ip){
+    let newPwd = prompt("输入新密码", "Qcy1994@06");
+    if(newPwd){
+        ws.send(JSON.stringify({action:"update_password", ip:ip, password:newPwd}));
+    }
+}
+
+function importAWS(){
+    let key = document.getElementById("aws_key_id").value;
+    if(!key){
+        alert("请输入 AWS Key");
+        return;
+    }
+    ws.send(JSON.stringify({action:"import_aws", aws_key_id:key}));
+    alert("正在导入实例，请稍候...");
+}
+</script>
+
 </body>
 </html>
