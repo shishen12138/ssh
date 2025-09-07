@@ -44,21 +44,21 @@
 let ws = new WebSocket("ws://localhost:12138/ws");
 
 ws.onopen = ()=>{ ws.send(JSON.stringify({action:"get_hosts"})); };
-
 ws.onmessage = (event)=>{
     let data = JSON.parse(event.data);
-    const logDiv = document.getElementById("log");
-    const now = new Date().toLocaleTimeString();
-
     if(data.log){
-        logDiv.innerHTML += `[${now}] ${data.log}<br>`;
-        logDiv.scrollTop = logDiv.scrollHeight;
+        appendLog(data.log);
     }
-
     if(data.action=="update_host"){
         updateHostRow(data.host);
     }
 };
+
+function appendLog(msg){
+    let logDiv = document.getElementById("log");
+    logDiv.innerHTML += msg + "<br>";
+    logDiv.scrollTop = logDiv.scrollHeight;
+}
 
 function updateHostRow(host){
     let tbody = document.getElementById("host_table");
@@ -89,6 +89,7 @@ function updateHostRow(host){
 function executeCommand(){
     let ips = Array.from(document.querySelectorAll('input[name="host"]:checked')).map(cb=>cb.value);
     let cmd = document.getElementById("command").value;
+    appendLog(`执行命令: ${cmd}，目标: ${ips.join(",")}`);
     ws.send(JSON.stringify({action:"exec", ips: ips, command: cmd}));
 }
 
@@ -100,6 +101,7 @@ function selectAll(cb){
 function changePassword(ip){
     let newPwd = prompt("输入新密码", "Qcy1994@06");
     if(newPwd){
+        appendLog(`修改密码: ${ip}`);
         ws.send(JSON.stringify({action:"update_password", ip:ip, password:newPwd}));
     }
 }
@@ -110,13 +112,7 @@ function importAWS(){
         alert("请输入 AWS Key");
         return;
     }
-    // 写入日志区域开始信息
-    const logDiv = document.getElementById("log");
-    const now = new Date().toLocaleTimeString();
-    logDiv.innerHTML += `[${now}] 开始导入 AWS 实例...<br>`;
-    logDiv.scrollTop = logDiv.scrollHeight;
-
-    // 发送 WebSocket 请求
+    appendLog("开始导入 AWS 实例...");
     ws.send(JSON.stringify({action:"import_aws", aws_key_id:key}));
 }
 </script>
