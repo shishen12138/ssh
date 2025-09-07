@@ -15,6 +15,7 @@ DEBIAN_FRONTEND=noninteractive apt install -y python3-pip python3-venv sshpass s
 
 echo "=== 拉取项目文件 ==="
 curl -s -O https://raw.githubusercontent.com/shishen12138/ssh/main/backend.py
+curl -s -O https://raw.githubusercontent.com/shishen12138/ssh/main/hosts.json
 mkdir -p static
 curl -s -o static/index.html https://raw.githubusercontent.com/shishen12138/ssh/main/static/index.html
 
