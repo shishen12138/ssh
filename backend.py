@@ -19,7 +19,7 @@ def load_hosts():
 
 def save_hosts(hosts):
     with open(HOSTS_FILE, "w") as f:
-        json.dump(hosts, indent=2)
+        json.dump(hosts, f, indent=2)
 
 def update_host(host_ip, cpu=None, memory=None, status=None, runtime_days=None, password=None):
     hosts = load_hosts()
@@ -42,40 +42,64 @@ def parse_aws_key(key_str):
     else:
         raise ValueError("AWS Key 格式错误")
 
-# ----------------- AWS 实例导入 -----------------
-def import_aws_instances(access_key, secret_key, default_user="root", default_pwd="Qcy1994@06"):
-    ec2_client = boto3.client('ec2', aws_access_key_id=access_key, aws_secret_access_key=secret_key, region_name='us-east-1')
-    regions = [r['RegionName'] for r in ec2_client.describe_regions()['Regions']]
+# ----------------- 异步 AWS 实例导入 -----------------
+async def import_aws_instances_async(raw_key, websocket, default_user="root", default_pwd="Qcy1994@06"):
+    try:
+        access_key, secret_key = parse_aws_key(raw_key)
+    except Exception as e:
+        await websocket.send_json({"log": f"AWS Key 格式错误: {e}"})
+        return []
+
+    await websocket.send_json({"log": "开始导入 AWS 实例..."})
     hosts = []
-    for region in regions:
-        ec2 = boto3.client('ec2', aws_access_key_id=access_key, aws_secret_access_key=secret_key, region_name=region)
-        reservations = ec2.describe_instances()['Reservations']
-        for res in reservations:
-            for inst in res['Instances']:
-                if inst['State']['Name'] != 'running':
-                    continue
-                ip = inst.get('PublicIpAddress')
-                if not ip:
-                    continue
-                launch_time = inst['LaunchTime']
-                runtime_days = (datetime.datetime.utcnow() - launch_time.replace(tzinfo=None)).days
-                hosts.append({
-                    "ip": ip,
-                    "username": default_user,
-                    "password": default_pwd,
-                    "aws_key": f"{access_key}----{secret_key}",
-                    "cpu": 0,
-                    "memory": 0,
-                    "runtime_days": runtime_days,
-                    "status": "green"
-                })
-    save_hosts(hosts)
+
+    try:
+        ec2_client = boto3.client('ec2', aws_access_key_id=access_key, aws_secret_access_key=secret_key, region_name='us-east-1')
+        regions = [r['RegionName'] for r in ec2_client.describe_regions()['Regions']]
+        await websocket.send_json({"log": f"共找到 {len(regions)} 个区域，开始遍历..."})
+
+        for region in regions:
+            await websocket.send_json({"log": f"正在连接区域: {region}"})
+            try:
+                ec2 = boto3.client('ec2', aws_access_key_id=access_key, aws_secret_access_key=secret_key, region_name=region)
+                reservations = ec2.describe_instances()['Reservations']
+                for res in reservations:
+                    for inst in res['Instances']:
+                        if inst['State']['Name'] != 'running':
+                            continue
+                        ip = inst.get('PublicIpAddress')
+                        if not ip:
+                            continue
+                        launch_time = inst['LaunchTime']
+                        runtime_days = (datetime.datetime.utcnow() - launch_time.replace(tzinfo=None)).days
+                        host_info = {
+                            "ip": ip,
+                            "username": default_user,
+                            "password": default_pwd,
+                            "aws_key": f"{access_key}----{secret_key}",
+                            "cpu": 0,
+                            "memory": 0,
+                            "runtime_days": runtime_days,
+                            "status": "green"
+                        }
+                        hosts.append(host_info)
+                        await websocket.send_json({"action":"update_host","host":host_info})
+            except Exception as e:
+                await websocket.send_json({"log": f"区域 {region} 访问失败: {e}"})
+
+        save_hosts(hosts)
+        await websocket.send_json({"log": f"AWS 实例导入完成，共 {len(hosts)} 台"})
+
+    except Exception as e:
+        await websocket.send_json({"log": f"AWS 导入异常: {e}"})
+
     return hosts
 
 # ----------------- SSH 执行 -----------------
 async def ssh_execute(host, command, websocket):
     ip = host["ip"]
     LOGS.append(f"{datetime.datetime.now()} - 开始执行 {ip}")
+    await websocket.send_json({"ip": ip, "status": "running"})
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -100,7 +124,6 @@ async def monitor_host(host, websocket):
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(ip, username=host["username"], password=host["password"], timeout=5)
 
-            # 自动 fallback CPU 采集
             stdin, stdout, stderr = ssh.exec_command("which mpstat")
             mpstat_path = stdout.readline().strip()
             if mpstat_path:
@@ -177,14 +200,8 @@ async def websocket_endpoint(ws: WebSocket):
 
         elif action == "import_aws":
             raw_key = data.get("aws_key_id")
-            try:
-                access_key, secret_key = parse_aws_key(raw_key)
-                hosts = import_aws_instances(access_key, secret_key)
-                for host in hosts:
-                    await ws.send_json({"action":"update_host","host":host})
-                await ws.send_json({"log":f"AWS 实例导入完成，共 {len(hosts)} 台"})
-            except Exception as e:
-                await ws.send_json({"log":f"AWS Key 解析错误: {e}"})
+            if raw_key:
+                asyncio.create_task(import_aws_instances_async(raw_key, ws))
 
 # ----------------- 前端 -----------------
 @app.get("/")
