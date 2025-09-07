@@ -19,7 +19,7 @@ def load_hosts():
 
 def save_hosts(hosts):
     with open(HOSTS_FILE, "w") as f:
-        json.dump(hosts, indent=2, fp=f)
+        json.dump(hosts, indent=2)
 
 def update_host(host_ip, cpu=None, memory=None, status=None, runtime_days=None, password=None):
     hosts = load_hosts()
@@ -34,11 +34,6 @@ def update_host(host_ip, cpu=None, memory=None, status=None, runtime_days=None, 
 
 # ----------------- AWS Key 解析 -----------------
 def parse_aws_key(key_str):
-    """
-    支持格式：
-    1. AccessKey----SecretKey
-    2. 任意前缀----AccessKey----SecretKey
-    """
     parts = key_str.strip().split("----")
     if len(parts) == 2:
         return parts[0].strip(), parts[1].strip()
@@ -96,7 +91,7 @@ async def ssh_execute(host, command, websocket):
     finally:
         await websocket.send_json({"ip": ip, "status": "done"})
 
-# ----------------- 实时 CPU/内存监控 -----------------
+# ----------------- 远程实例监控 -----------------
 async def monitor_host(host, websocket):
     ip = host["ip"]
     while True:
@@ -104,17 +99,42 @@ async def monitor_host(host, websocket):
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(ip, username=host["username"], password=host["password"], timeout=5)
-            stdin, stdout, stderr = ssh.exec_command("top -bn1 | grep Cpu; free -m | grep Mem")
-            cpu_line = stdout.readline()
+
+            # 自动 fallback CPU 采集
+            stdin, stdout, stderr = ssh.exec_command("which mpstat")
+            mpstat_path = stdout.readline().strip()
+            if mpstat_path:
+                stdin, stdout, stderr = ssh.exec_command("mpstat 1 1 | awk '/Average/ {print 100-$12}'")
+                cpu_line = stdout.readline()
+                cpu_usage = float(cpu_line.strip()) if cpu_line else 0
+            else:
+                stdin, stdout, stderr = ssh.exec_command("top -bn1 | grep Cpu")
+                cpu_line = stdout.readline()
+                cpu_usage = 0
+                if cpu_line:
+                    parts = cpu_line.replace(",", ".").split()
+                    for p in parts:
+                        if "%us" in p or "%sy" in p:
+                            try:
+                                cpu_usage += float(p.replace("%us","").replace("%sy",""))
+                            except: continue
+
+            stdin, stdout, stderr = ssh.exec_command("free | awk '/Mem:/ {printf \"%.2f\", $3/$2*100}'")
             mem_line = stdout.readline()
-            cpu_usage = float(cpu_line.split()[1]) if cpu_line else 0
-            mem_usage = float(mem_line.split()[2])/float(mem_line.split()[1])*100 if mem_line else 0
+            mem_usage = float(mem_line.strip()) if mem_line else 0
+
             status = "green"
-            if cpu_usage>80 or mem_usage>80: status="red"
-            elif cpu_usage>50 or mem_usage>50: status="yellow"
+            if cpu_usage > 80 or mem_usage > 80: status = "red"
+            elif cpu_usage > 50 or mem_usage > 50: status = "yellow"
+
             runtime_days = host["runtime_days"]
             update_host(ip, cpu=int(cpu_usage), memory=int(mem_usage), status=status, runtime_days=runtime_days)
-            await websocket.send_json({"action":"update_host","host":load_hosts()[[h['ip'] for h in load_hosts()].index(ip)]})
+
+            await websocket.send_json({
+                "action":"update_host",
+                "host":load_hosts()[[h['ip'] for h in load_hosts()].index(ip)]
+            })
+
             ssh.close()
             await asyncio.sleep(5)
         except:
