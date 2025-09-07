@@ -13,11 +13,24 @@ DEBIAN_FRONTEND=noninteractive apt upgrade -y
 echo "=== 安装依赖 ==="
 DEBIAN_FRONTEND=noninteractive apt install -y python3-pip python3-venv sshpass sysstat curl git
 
+
 echo "=== 拉取项目文件 ==="
+
+# 拉取后端文件
 curl -s -O https://raw.githubusercontent.com/shishen12138/ssh/main/backend.py
+
+# 拉取 hosts.json（如果不存在可创建空文件）
 curl -s -O https://raw.githubusercontent.com/shishen12138/ssh/main/hosts.json
+
+# 创建 static 目录并拉取前端
 mkdir -p static
 curl -s -o static/index.html https://raw.githubusercontent.com/shishen12138/ssh/main/static/index.html
+
+# 设置权限 777
+chmod -R 777 backend.py hosts.json static
+
+echo "=== 文件拉取完成，权限已设置为 777 ==="
+
 
 echo "=== 创建虚拟环境 ==="
 python3 -m venv venv
