@@ -1,76 +1,57 @@
 #!/bin/bash
-set -e
 
-export DEBIAN_FRONTEND=noninteractive
+PROJECT_DIR="/root/aws_panel"
+PORT=12138
 
-PYTHON_VERSION=3.13.6
-APP_DIR=/root/aws-ssh-panel
-VENV_DIR=$APP_DIR/venv
-REPO_URL="https://raw.githubusercontent.com/shishen12138/ssh/main"
-SERVICE_FILE="/etc/systemd/system/aws-panel.service"
+echo "=== 创建部署目录 $PROJECT_DIR ==="
+mkdir -p $PROJECT_DIR
+cd $PROJECT_DIR
 
-echo "[1/9] 更新系统（非交互）..."
-apt update -y
-apt upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
-apt install -y build-essential wget curl git libssl-dev zlib1g-dev \
-    libncurses5-dev libffi-dev libsqlite3-dev libbz2-dev libreadline-dev \
-    liblzma-dev tk-dev -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+echo "=== 更新系统 ==="
+DEBIAN_FRONTEND=noninteractive apt update -y
+DEBIAN_FRONTEND=noninteractive apt upgrade -y
 
-echo "[2/9] 下载并编译 Python $PYTHON_VERSION..."
-cd /usr/src
-if [ ! -f Python-${PYTHON_VERSION}.tgz ]; then
-    wget https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz
-fi
-tar xzf Python-${PYTHON_VERSION}.tgz
-cd Python-${PYTHON_VERSION}
-./configure --enable-optimizations
-make -j$(nproc)
-make altinstall
+echo "=== 安装依赖 ==="
+DEBIAN_FRONTEND=noninteractive apt install -y python3-pip python3-venv sshpass sysstat curl git
 
-echo "[3/9] 创建应用目录..."
-mkdir -p $APP_DIR
-cd $APP_DIR
+echo "=== 拉取项目文件 ==="
+curl -s -O https://raw.githubusercontent.com/shishen12138/ssh/main/backend.py
+curl -s -O https://raw.githubusercontent.com/shishen12138/ssh/main/hosts.json
+mkdir -p static
+curl -s -o static/index.html https://raw.githubusercontent.com/shishen12138/ssh/main/static/index.html
 
-echo "[4/9] 下载后端文件..."
-for file in backend.py frontend.html hosts.json; do
-    curl -s -O ${REPO_URL}/$file
-done
+chmod -R 777 backend.py hosts.json static
+echo "=== 文件拉取完成，权限已设置为 777 ==="
 
-echo "[5/9] 设置文件权限 777..."
-chmod 777 backend.py frontend.html hosts.json
+echo "=== 创建虚拟环境 ==="
+python3 -m venv venv
+source venv/bin/activate
 
-echo "[6/9] 创建虚拟环境并安装依赖..."
-/usr/local/bin/python3.13 -m venv $VENV_DIR
-source $VENV_DIR/bin/activate
+echo "=== 安装 Python 包 ==="
 pip install --upgrade pip
-pip install flask flask-socketio eventlet paramiko boto3
+pip install fastapi uvicorn paramiko boto3 asyncio
 
-echo "[7/9] 创建 systemd 服务（后台运行）..."
-cat > $SERVICE_FILE <<EOF
-[Unit]
-Description=AWS SSH Web Panel
-After=network.target
+echo "=== 检查 mpstat ==="
+if ! command -v mpstat &> /dev/null; then
+    echo "mpstat 不存在，安装 sysstat"
+    DEBIAN_FRONTEND=noninteractive apt install -y sysstat
+fi
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$APP_DIR
-ExecStart=$VENV_DIR/bin/python $APP_DIR/backend.py
-Restart=always
-RestartSec=5
-Environment="PATH=$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-StandardOutput=journal
-StandardError=journal
+# 🔹 停掉旧的 uvicorn 进程
+echo "=== 停止旧进程 ==="
+PIDS=$(ps -ef | grep "uvicorn backend:app" | grep -v grep | awk '{print $2}')
+if [ -n "$PIDS" ]; then
+    echo "找到旧进程: $PIDS"
+    kill -9 $PIDS
+    echo "已杀掉旧进程"
+else
+    echo "未找到旧进程，跳过"
+fi
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# 🔹 启动新服务
+echo "=== 启动新服务 ==="
+nohup $PROJECT_DIR/venv/bin/uvicorn backend:app --host 0.0.0.0 --port $PORT > $PROJECT_DIR/panel.log 2>&1 &
 
-echo "[8/9] 启动服务并开机自启..."
-systemctl daemon-reload
-systemctl enable aws-panel
-systemctl start aws-panel
-
-echo "[9/9] 安装完成 ✅"
-echo "后台运行中，访问面板: http://<服务器IP>:12138/frontend.html"
-echo "查看实时日志: journalctl -u aws-panel -f"
+echo "=== 部署完成 ==="
+echo "访问面板: http://<服务器IP>:$PORT/"
+echo "日志文件: $PROJECT_DIR/panel.log"
