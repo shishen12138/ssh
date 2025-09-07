@@ -8,6 +8,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 HOSTS_FILE = "hosts.json"
 LOGS = []
+file_lock = asyncio.Lock()  # 🔒 文件写锁
+
 
 # ----------------- 数据操作 -----------------
 def load_hosts():
@@ -17,11 +19,15 @@ def load_hosts():
     except:
         return []
 
-def save_hosts(hosts):
-    with open(HOSTS_FILE, "w") as f:
-        json.dump(hosts, f, indent=2)
 
-def update_host(host_ip, cpu=None, memory=None, status=None, runtime_days=None, password=None):
+async def save_hosts(hosts):
+    """带锁的保存，避免并发写入冲突"""
+    async with file_lock:
+        with open(HOSTS_FILE, "w") as f:
+            json.dump(hosts, f, indent=2)
+
+
+def update_host_sync(host_ip, cpu=None, memory=None, status=None, runtime_days=None, password=None):
     hosts = load_hosts()
     for host in hosts:
         if host["ip"] == host_ip:
@@ -30,7 +36,9 @@ def update_host(host_ip, cpu=None, memory=None, status=None, runtime_days=None, 
             if status is not None: host["status"] = status
             if runtime_days is not None: host["runtime_days"] = runtime_days
             if password is not None: host["password"] = password
-    save_hosts(hosts)
+    # 因为 update_host 可能在同步函数里调用，这里用 run_until_complete 包装
+    asyncio.get_event_loop().run_until_complete(save_hosts(hosts))
+
 
 # ----------------- AWS Key 解析 -----------------
 def parse_aws_key(key_str):
@@ -41,6 +49,7 @@ def parse_aws_key(key_str):
         return parts[-2].strip(), parts[-1].strip()
     else:
         raise ValueError("AWS Key 格式错误")
+
 
 # ----------------- 异步 AWS 实例导入 -----------------
 async def import_aws_instances_async(raw_key, websocket, default_user="root", default_pwd="Qcy1994@06"):
@@ -83,17 +92,22 @@ async def import_aws_instances_async(raw_key, websocket, default_user="root", de
                             "status": "green"
                         }
                         hosts.append(host_info)
-                        await websocket.send_json({"action":"update_host","host":host_info})
+                        await websocket.send_json({"action": "update_host", "host": host_info})
             except Exception as e:
                 await websocket.send_json({"log": f"区域 {region} 访问失败: {e}"})
 
-        save_hosts(hosts)
+        # ✅ 追加保存，而不是覆盖
+        all_hosts = load_hosts()
+        all_hosts.extend(hosts)
+        await save_hosts(all_hosts)
+
         await websocket.send_json({"log": f"AWS 实例导入完成，共 {len(hosts)} 台"})
 
     except Exception as e:
         await websocket.send_json({"log": f"AWS 导入异常: {e}"})
 
     return hosts
+
 
 # ----------------- SSH 执行 -----------------
 async def ssh_execute(host, command, websocket):
@@ -115,6 +129,7 @@ async def ssh_execute(host, command, websocket):
     finally:
         await websocket.send_json({"ip": ip, "status": "done"})
 
+
 # ----------------- 远程实例监控 -----------------
 async def monitor_host(host, websocket):
     ip = host["ip"]
@@ -124,6 +139,7 @@ async def monitor_host(host, websocket):
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(ip, username=host["username"], password=host["password"], timeout=5)
 
+            # CPU
             stdin, stdout, stderr = ssh.exec_command("which mpstat")
             mpstat_path = stdout.readline().strip()
             if mpstat_path:
@@ -139,30 +155,38 @@ async def monitor_host(host, websocket):
                     for p in parts:
                         if "%us" in p or "%sy" in p:
                             try:
-                                cpu_usage += float(p.replace("%us","").replace("%sy",""))
-                            except: continue
+                                cpu_usage += float(p.replace("%us", "").replace("%sy", ""))
+                            except:
+                                continue
 
+            # 内存
             stdin, stdout, stderr = ssh.exec_command("free | awk '/Mem:/ {printf \"%.2f\", $3/$2*100}'")
             mem_line = stdout.readline()
             mem_usage = float(mem_line.strip()) if mem_line else 0
 
             status = "green"
-            if cpu_usage > 80 or mem_usage > 80: status = "red"
-            elif cpu_usage > 50 or mem_usage > 50: status = "yellow"
+            if cpu_usage > 80 or mem_usage > 80:
+                status = "red"
+            elif cpu_usage > 50 or mem_usage > 50:
+                status = "yellow"
 
             runtime_days = host["runtime_days"]
-            update_host(ip, cpu=int(cpu_usage), memory=int(mem_usage), status=status, runtime_days=runtime_days)
+            update_host_sync(ip, cpu=int(cpu_usage), memory=int(mem_usage), status=status, runtime_days=runtime_days)
 
             await websocket.send_json({
-                "action":"update_host",
-                "host":load_hosts()[[h['ip'] for h in load_hosts()].index(ip)]
+                "action": "update_host",
+                "host": load_hosts()[[h['ip'] for h in load_hosts()].index(ip)]
             })
 
             ssh.close()
             await asyncio.sleep(5)
-        except:
+
+        except Exception as e:
+            # ✅ 打印异常日志
+            await websocket.send_json({"ip": ip, "log": f"监控异常: {e}"})
             await asyncio.sleep(5)
             continue
+
 
 # ----------------- WebSocket -----------------
 @app.websocket("/ws")
@@ -181,9 +205,8 @@ async def websocket_endpoint(ws: WebSocket):
         if action == "exec":
             command = data.get("command")
             selected_ips = data.get("ips", [])
-            for host in hosts:
-                if host["ip"] in selected_ips:
-                    await ssh_execute(host, command, ws)
+            tasks = [ssh_execute(host, command, ws) for host in hosts if host["ip"] in selected_ips]
+            await asyncio.gather(*tasks)
 
         elif action == "get_hosts":
             for host in hosts:
@@ -196,12 +219,13 @@ async def websocket_endpoint(ws: WebSocket):
         elif action == "update_password":
             ip = data["ip"]
             pwd = data["password"]
-            update_host(ip, password=pwd)
+            update_host_sync(ip, password=pwd)
 
         elif action == "import_aws":
             raw_key = data.get("aws_key_id")
             if raw_key:
                 asyncio.create_task(import_aws_instances_async(raw_key, ws))
+
 
 # ----------------- 前端 -----------------
 @app.get("/")
