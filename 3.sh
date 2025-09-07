@@ -7,12 +7,6 @@ echo "=== 创建部署目录 $PROJECT_DIR ==="
 mkdir -p $PROJECT_DIR
 cd $PROJECT_DIR
 
-echo "=== 更新系统 ==="
-DEBIAN_FRONTEND=noninteractive apt update -y
-DEBIAN_FRONTEND=noninteractive apt upgrade -y
-
-echo "=== 安装依赖 ==="
-DEBIAN_FRONTEND=noninteractive apt install -y python3-pip python3-venv sshpass sysstat curl git
 
 echo "=== 拉取项目文件 ==="
 curl -s -O https://raw.githubusercontent.com/shishen12138/ssh/main/backend.py
