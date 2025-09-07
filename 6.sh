@@ -1,78 +1,49 @@
 #!/bin/bash
-set -e
 
-# -------------------- 配置 --------------------
-PYTHON_VERSION=3.13.6
-APP_DIR=/root/aws-ssh-panel
-VENV_DIR=$APP_DIR/venv
-REPO_URL="https://raw.githubusercontent.com/shishen12138/ssh/main"
-SERVICE_FILE="/etc/systemd/system/aws-panel.service"
+# ===============================
+# AWS SSH 管理面板 root 目录自动部署脚本
+# ===============================
 
-# 使用非交互模式
-export DEBIAN_FRONTEND=noninteractive
+# 部署目录
+PROJECT_DIR="/root/aws_panel"
 
-# -------------------- 安装依赖 --------------------
-echo "[1/5] 安装必需依赖..."
-apt install -y build-essential wget curl git libssl-dev zlib1g-dev \
-    libncurses5-dev libffi-dev libsqlite3-dev libbz2-dev libreadline-dev \
-    liblzma-dev tk-dev -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+echo "=== 创建部署目录 $PROJECT_DIR ==="
+mkdir -p $PROJECT_DIR
+cd $PROJECT_DIR
 
-# -------------------- 安装 Python --------------------
-echo "[2/5] 下载并编译 Python $PYTHON_VERSION..."
-cd /usr/src
-if [ ! -f Python-${PYTHON_VERSION}.tgz ]; then
-    wget https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz
-fi
-tar xzf Python-${PYTHON_VERSION}.tgz
-cd Python-${PYTHON_VERSION}
-./configure --enable-optimizations
-make -j$(nproc)
-make altinstall
+echo "=== 安装系统依赖 ==="
+apt update && apt upgrade -y
+apt install -y python3-pip python3-venv sshpass sysstat curl unzip git
 
-# -------------------- 下载项目文件 --------------------
-echo "[3/5] 创建应用目录并下载文件..."
-mkdir -p $APP_DIR
-cd $APP_DIR
+echo "=== 拉取最新项目文件 ==="
+# 拉取 backend.py
+curl -O https://raw.githubusercontent.com/shishen12138/ssh/main/backend.py
+# 拉取 static 目录
+mkdir -p static
+curl -o static/index.html https://raw.githubusercontent.com/shishen12138/ssh/main/static/index.html
 
-for file in backend.py frontend.html hosts.json; do
-    curl -s -O ${REPO_URL}/$file
-done
+echo "=== 创建 Python 虚拟环境 ==="
+python3 -m venv venv
+source venv/bin/activate
 
-chmod 777 backend.py frontend.html hosts.json
-
-# -------------------- 虚拟环境 + 依赖 --------------------
-echo "[4/5] 创建虚拟环境并安装 Python 包..."
-/usr/local/bin/python3.13 -m venv $VENV_DIR
-source $VENV_DIR/bin/activate
+echo "=== 安装 Python 包 ==="
 pip install --upgrade pip
-pip install flask flask-socketio eventlet paramiko boto3
+pip install fastapi uvicorn paramiko boto3 asyncio
 
-# -------------------- 创建 systemd 服务 --------------------
-echo "[5/5] 创建 systemd 服务并启动..."
-cat > $SERVICE_FILE <<EOF
-[Unit]
-Description=AWS SSH Web Panel
-After=network.target
+echo "=== 检查 mpstat 是否可用 ==="
+if ! command -v mpstat &> /dev/null; then
+    echo "mpstat 不存在，安装 sysstat"
+    apt install -y sysstat
+else
+    echo "mpstat 已安装"
+fi
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$APP_DIR
-ExecStart=$VENV_DIR/bin/python $APP_DIR/backend.py
-Restart=always
-RestartSec=5
-Environment="PATH=$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-StandardOutput=journal
-StandardError=journal
+echo "=== 启动后端服务 ==="
+echo "服务将运行在 http://0.0.0.0:12138/"
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# 后台启动并写日志
+nohup $PROJECT_DIR/venv/bin/uvicorn backend:app --host 0.0.0.0 --port 12138 > $PROJECT_DIR/panel.log 2>&1 &
 
-systemctl daemon-reload
-systemctl enable aws-panel
-systemctl start aws-panel
-
-echo "✅ 安装完成！服务已后台运行并开机自启。"
-echo "访问面板: http://<服务器IP>:12138/frontend.html"
-echo "实时日志: journalctl -u aws-panel -f"
+echo "=== 部署完成 ==="
+echo "日志文件: $PROJECT_DIR/panel.log"
+echo "访问面板: http://<服务器IP>:12138/"
