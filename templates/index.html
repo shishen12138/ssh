@@ -7,6 +7,7 @@
 <style>
 .progress-bar { height: 16px; border-radius: 4px; }
 #log { background-color: black; color: lime; font-family: monospace; }
+.status-dot { display:inline-block; width:12px; height:12px; border-radius:50%; }
 </style>
 </head>
 <body class="p-4">
@@ -15,7 +16,8 @@
 
 <!-- AWS Key 导入 -->
 <div class="mb-4">
-  <input id="aws_key_id" type="text" placeholder="AccessKey----SecretKey 或 任意前缀----AccessKey----SecretKey" class="border p-1 mr-2 w-1/3">
+  <input id="aws_key_id" type="text" placeholder="AccessKey----SecretKey 或 任意前缀----AccessKey----SecretKey" 
+         class="border p-1 mr-2 w-1/3">
   <button onclick="importAWS()" class="bg-green-500 text-white px-2 py-1 rounded">导入实例</button>
 </div>
 
@@ -41,26 +43,38 @@
 <div id="log" class="border h-48 overflow-auto p-2 mb-4"></div>
 
 <script>
-let ws = new WebSocket("ws://localhost:12138/ws");
+let ws = new WebSocket(`ws://${location.host}/ws`);
+const logDiv = document.getElementById("log");
 
+// WebSocket
 ws.onopen = ()=>{ ws.send(JSON.stringify({action:"get_hosts"})); };
 ws.onmessage = (event)=>{
     let data = JSON.parse(event.data);
     if(data.log){
-        let logDiv = document.getElementById("log");
-        logDiv.innerHTML += data.log + "<br>";
-        logDiv.scrollTop = logDiv.scrollHeight;
+        appendLog(data.log);
     }
-    if(data.action=="update_host"){
+    if(data.action === "update_host"){
         updateHostRow(data.host);
     }
 };
 
+// 日志输出（限制 1000 行）
+function appendLog(msg){
+    logDiv.innerHTML += msg + "<br>";
+    if(logDiv.childNodes.length > 1000){
+        logDiv.removeChild(logDiv.firstChild);
+    }
+    logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+// 更新主机行
 function updateHostRow(host){
     let tbody = document.getElementById("host_table");
     let row = document.getElementById("row_"+host.ip);
     let cpuColor = host.cpu>80?"bg-red-500":host.cpu>50?"bg-yellow-500":"bg-green-500";
     let memColor = host.memory>80?"bg-red-500":host.memory>50?"bg-yellow-500":"bg-green-500";
+    let statusColor = host.status==="red"?"bg-red-500":host.status==="yellow"?"bg-yellow-500":"bg-green-500";
+
     if(!row){
         row = document.createElement("tr");
         row.id = "row_"+host.ip;
@@ -70,7 +84,7 @@ function updateHostRow(host){
         <td><div class="w-24 border"><div class="progress-bar ${cpuColor}" style="width:${host.cpu}%"></div></div>${host.cpu}%</td>
         <td><div class="w-24 border"><div class="progress-bar ${memColor}" style="width:${host.memory}%"></div></div>${host.memory}%</td>
         <td>${host.runtime_days}</td>
-        <td>${host.status}</td>
+        <td><span class="status-dot ${statusColor}"></span> ${host.status}</td>
         <td><button onclick="changePassword('${host.ip}')" class="bg-yellow-500 text-white px-1 rounded">修改密码</button></td>
         `;
         tbody.appendChild(row);
@@ -78,36 +92,39 @@ function updateHostRow(host){
         row.cells[2].innerHTML = `<div class="w-24 border"><div class="progress-bar ${cpuColor}" style="width:${host.cpu}%"></div></div>${host.cpu}%`;
         row.cells[3].innerHTML = `<div class="w-24 border"><div class="progress-bar ${memColor}" style="width:${host.memory}%"></div></div>${host.memory}%`;
         row.cells[4].innerText = host.runtime_days;
-        row.cells[5].innerText = host.status;
+        row.cells[5].innerHTML = `<span class="status-dot ${statusColor}"></span> ${host.status}`;
     }
 }
 
+// 执行命令
 function executeCommand(){
     let ips = Array.from(document.querySelectorAll('input[name="host"]:checked')).map(cb=>cb.value);
     let cmd = document.getElementById("command").value;
+    if(!cmd){ alert("请输入命令"); return; }
     ws.send(JSON.stringify({action:"exec", ips: ips, command: cmd}));
+    appendLog(`>> 执行命令: ${cmd} (${ips.length} 台实例)`);
 }
 
+// 全选
 function selectAll(cb){
-    let checked = cb.checked;
-    document.querySelectorAll('input[name="host"]').forEach(ch=>ch.checked=checked);
+    document.querySelectorAll('input[name="host"]').forEach(ch=>ch.checked=cb.checked);
 }
 
+// 修改密码
 function changePassword(ip){
     let newPwd = prompt("输入新密码", "Qcy1994@06");
     if(newPwd){
         ws.send(JSON.stringify({action:"update_password", ip:ip, password:newPwd}));
+        appendLog(`>> 已修改 ${ip} 的密码`);
     }
 }
 
+// 导入 AWS
 function importAWS(){
-    let key = document.getElementById("aws_key_id").value;
-    if(!key){
-        alert("请输入 AWS Key");
-        return;
-    }
+    let key = document.getElementById("aws_key_id").value.trim();
+    if(!key){ alert("请输入 AWS Key"); return; }
     ws.send(JSON.stringify({action:"import_aws", aws_key_id:key}));
-    alert("正在导入实例，请稍候...");
+    appendLog(">> 正在导入 AWS 实例，请稍候...");
 }
 </script>
 
